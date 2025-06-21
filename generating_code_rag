@@ -1,0 +1,390 @@
+#!/usr/bin/env python3
+"""
+Reapy Code Assistant RAG (Retrieval-Augmented Generation) Script
+
+This script implements a RAG system specifically designed for reapy development:
+1. Reads reapy documentation and chunks it into smaller pieces
+2. Creates embeddings for each chunk
+3. Uses vector similarity to retrieve relevant documentation
+4. Uses Gemini to generate code examples and answers based on retrieved context
+
+Usage:
+    python main.py --question "How do I create a new track in reapy?"
+    python main.py --code "Create a script that adds a MIDI item to track 1"
+"""
+
+import os
+import sys
+import argparse
+import json
+from pathlib import Path
+from typing import List, Dict, Any
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+import google.generativeai as genai
+from sentence_transformers import SentenceTransformer
+
+
+class ReapyCodeRAG:
+    """RAG system specifically designed for reapy development using Gemini and sentence transformers."""
+    
+    def __init__(self, gemini_api_key: str = None, model_name: str = "all-MiniLM-L6-v2"):
+        """
+        Initialize the RAG system.
+        
+        Args:
+            gemini_api_key: Gemini API key (will try to get from environment if None)
+            model_name: Sentence transformer model name
+        """
+        # Set up Gemini
+        if gemini_api_key is None:
+            gemini_api_key = os.getenv('GEMINI_API_KEY')
+            if gemini_api_key is None:
+                raise ValueError("Gemini API key not provided. Set GEMINI_API_KEY environment variable or pass it as parameter.")
+        
+        genai.configure(api_key=gemini_api_key)
+        self.gemini_model = genai.GenerativeModel(model_name="models/gemini-pro")
+        
+        # Set up sentence transformer for embeddings
+        print(f"Loading sentence transformer model: {model_name}")
+        self.embedding_model = SentenceTransformer(model_name)
+        
+        # Storage for chunks and embeddings
+        self.chunks = []
+        self.embeddings = []
+        
+        print("✓ Reapy Code Assistant RAG system initialized successfully")
+    
+    def read_text_file(self, file_path: str) -> str:
+        """Read text from a file."""
+        print(f"Reading reapy documentation: {file_path}")
+        
+        with open(file_path, 'r', encoding='utf-8') as f:
+            text = f.read()
+        
+        print(f"✓ Read {len(text)} characters from reapy documentation")
+        return text
+    
+    def chunk_text(self, text: str, chunk_size: int = 800, overlap: int = 150) -> List[str]:
+        """
+        Split text into overlapping chunks optimized for code documentation.
+        
+        Args:
+            text: Input text
+            chunk_size: Maximum size of each chunk
+            overlap: Number of characters to overlap between chunks
+            
+        Returns:
+            List of text chunks
+        """
+        print("Chunking reapy documentation...")
+        
+        chunks = []
+        start = 0
+        
+        while start < len(text):
+            end = start + chunk_size
+            
+            # If this isn't the last chunk, try to break at better boundaries
+            if end < len(text):
+                # Look for better break points (class definitions, function definitions, etc.)
+                for i in range(end, max(start + chunk_size - 100, start), -1):
+                    if text[i] in '.!?\n':
+                        # Prefer breaking at class/function definitions
+                        if i > start + 50:  # Make sure we don't break too early
+                            # Look for class or function patterns
+                            lookback = text[max(0, i-20):i+1]
+                            if any(pattern in lookback for pattern in ['class ', 'def ', 'classreapy', 'Bases:']):
+                                end = i + 1
+                                break
+                        else:
+                            end = i + 1
+                            break
+            
+            chunk = text[start:end].strip()
+            if chunk and len(chunk) > 50:  # Only add substantial chunks
+                chunks.append(chunk)
+            
+            # Move start position, accounting for overlap
+            start = end - overlap
+            if start >= len(text):
+                break
+        
+        print(f"✓ Created {len(chunks)} documentation chunks")
+        return chunks
+    
+    def create_embeddings(self, chunks: List[str]) -> np.ndarray:
+        """Create embeddings for text chunks."""
+        print("Creating embeddings for reapy documentation...")
+        
+        embeddings = self.embedding_model.encode(chunks)
+        print(f"✓ Created embeddings with shape: {embeddings.shape}")
+        return embeddings
+    
+    def load_document(self, file_path: str, chunk_size: int = 800, overlap: int = 150):
+        """Load and process reapy documentation."""
+        # Read text
+        text = self.read_text_file(file_path)
+        
+        # Chunk text
+        self.chunks = self.chunk_text(text, chunk_size, overlap)
+        
+        # Create embeddings
+        self.embeddings = self.create_embeddings(self.chunks)
+        
+        print(f"✓ Reapy documentation loaded: {len(self.chunks)} chunks")
+    
+    def retrieve_relevant_chunks(self, query: str, top_k: int = 4) -> List[str]:
+        """
+        Retrieve the most relevant chunks for a query.
+        
+        Args:
+            query: The question/query
+            top_k: Number of top chunks to retrieve
+            
+        Returns:
+            List of relevant text chunks
+        """
+        print(f"Retrieving relevant reapy documentation for: '{query}'")
+        
+        # Create embedding for the query
+        query_embedding = self.embedding_model.encode([query])
+        
+        # Calculate similarities
+        similarities = cosine_similarity(query_embedding, self.embeddings)[0]
+        
+        # Get top-k most similar chunks
+        top_indices = np.argsort(similarities)[::-1][:top_k]
+        
+        relevant_chunks = []
+        for idx in top_indices:
+            relevant_chunks.append(self.chunks[idx])
+            print(f"  - Chunk {idx}: similarity {similarities[idx]:.3f}")
+        
+        return relevant_chunks
+    
+    def generate_code_answer(self, query: str, context_chunks: List[str]) -> str:
+        """
+        Generate a code-focused answer using Gemini based on retrieved context.
+        
+        Args:
+            query: The question
+            context_chunks: Relevant context chunks
+            
+        Returns:
+            Generated answer with code examples
+        """
+        print("Generating reapy code answer with Gemini...")
+        
+        # Prepare context
+        context = "\n\n".join(context_chunks)
+        
+        # Create code-focused prompt
+        prompt = f"""You are a reapy (Python library for REAPER) expert. Based on the following reapy documentation, please answer the question with practical code examples.
+
+Context (reapy documentation):
+{context}
+
+Question: {query}
+
+Please provide:
+1. A clear explanation of the concept
+2. Practical code examples using reapy
+3. Any important notes or best practices
+4. If the question asks for a complete script, provide a full working example
+
+Answer:"""
+        
+        try:
+            # Generate response
+            response = self.gemini_model.generate_content(prompt)
+            answer = response.text
+            
+            print("✓ Code answer generated successfully")
+            return answer
+            
+        except Exception as e:
+            print(f"✗ Error generating answer: {e}")
+            return f"Error generating answer: {e}"
+    
+    def generate_script(self, script_request: str, context_chunks: List[str]) -> str:
+        """
+        Generate a complete reapy script based on the request.
+        
+        Args:
+            script_request: Description of the script to generate
+            context_chunks: Relevant context chunks
+            
+        Returns:
+            Generated complete script
+        """
+        print("Generating complete reapy script with Gemini...")
+        
+        # Prepare context
+        context = "\n\n".join(context_chunks)
+        
+        # Create script generation prompt
+        prompt = f"""You are a reapy (Python library for REAPER) expert. Based on the following reapy documentation, please generate a complete, working Python script.
+
+Context (reapy documentation):
+{context}
+
+Script Request: {script_request}
+
+Please generate a complete Python script that:
+1. Imports the necessary reapy modules
+2. Implements the requested functionality
+3. Includes proper error handling
+4. Has clear comments explaining each step
+5. Is ready to run in REAPER
+
+Provide the complete script with proper Python syntax:"""
+        
+        try:
+            # Generate response
+            response = self.gemini_model.generate_content(prompt)
+            script = response.text
+            
+            print("✓ Script generated successfully")
+            return script
+            
+        except Exception as e:
+            print(f"✗ Error generating script: {e}")
+            return f"Error generating script: {e}"
+    
+    def ask_question(self, query: str, top_k: int = 4) -> Dict[str, Any]:
+        """
+        Ask a question and get a code-focused answer using RAG.
+        
+        Args:
+            query: The question to ask
+            top_k: Number of relevant chunks to retrieve
+            
+        Returns:
+            Dictionary containing answer and metadata
+        """
+        if not self.chunks:
+            raise ValueError("No documentation loaded. Please load reapy documentation first.")
+        
+        # Retrieve relevant chunks
+        relevant_chunks = self.retrieve_relevant_chunks(query, top_k)
+        
+        # Generate answer
+        answer = self.generate_code_answer(query, relevant_chunks)
+        
+        return {
+            'question': query,
+            'answer': answer,
+            'relevant_chunks': relevant_chunks,
+            'num_chunks_retrieved': len(relevant_chunks),
+            'type': 'question'
+        }
+    
+    def generate_script_from_request(self, script_request: str, top_k: int = 4) -> Dict[str, Any]:
+        """
+        Generate a complete script based on a request.
+        
+        Args:
+            script_request: Description of the script to generate
+            top_k: Number of relevant chunks to retrieve
+            
+        Returns:
+            Dictionary containing script and metadata
+        """
+        if not self.chunks:
+            raise ValueError("No documentation loaded. Please load reapy documentation first.")
+        
+        # Retrieve relevant chunks
+        relevant_chunks = self.retrieve_relevant_chunks(script_request, top_k)
+        
+        # Generate script
+        script = self.generate_script(script_request, relevant_chunks)
+        
+        return {
+            'script_request': script_request,
+            'script': script,
+            'relevant_chunks': relevant_chunks,
+            'num_chunks_retrieved': len(relevant_chunks),
+            'type': 'script'
+        }
+
+
+def main():
+    """Main function."""
+    parser = argparse.ArgumentParser(description="Reapy Code Assistant RAG system")
+    parser.add_argument("--file", type=str, default="file.txt",
+                       help="Path to reapy documentation file (default: file.txt)")
+    parser.add_argument("--question", type=str, default=None,
+                       help="Question about reapy (e.g., 'How do I create a new track?')")
+    parser.add_argument("--code", type=str, default=None,
+                       help="Request for a complete script (e.g., 'Create a script that adds MIDI items')")
+    parser.add_argument("--api_key", type=str, default=None,
+                       help="Gemini API key (or set GEMINI_API_KEY environment variable)")
+    parser.add_argument("--chunk_size", type=int, default=800,
+                       help="Size of text chunks (default: 800)")
+    parser.add_argument("--overlap", type=int, default=150,
+                       help="Overlap between chunks (default: 150)")
+    parser.add_argument("--top_k", type=int, default=4,
+                       help="Number of relevant chunks to retrieve (default: 4)")
+    parser.add_argument("--output", type=str, default="rag_results.json",
+                       help="Output file for results (default: rag_results.json)")
+    
+    args = parser.parse_args()
+    
+    # Check if either question or code is provided
+    if not args.question and not args.code:
+        print("✗ Error: Please provide either --question or --code")
+        print("Examples:")
+        print("  python main.py --question 'How do I create a new track in reapy?'")
+        print("  python main.py --code 'Create a script that adds a MIDI item to track 1'")
+        sys.exit(1)
+    
+    # Check if file exists
+    if not os.path.exists(args.file):
+        print(f"✗ Error: File not found: {args.file}")
+        print(f"Please make sure '{args.file}' exists in the current directory.")
+        sys.exit(1)
+    
+    try:
+        # Initialize RAG system
+        print("Initializing Reapy Code Assistant RAG system...")
+        rag = ReapyCodeRAG(gemini_api_key=args.api_key)
+        
+        # Load document
+        rag.load_document(args.file, args.chunk_size, args.overlap)
+        
+        # Process question or code request
+        if args.question:
+            print(f"\n{'='*60}")
+            print(f"Question: {args.question}")
+            print(f"{'='*60}")
+            
+            result = rag.ask_question(args.question, args.top_k)
+            
+            # Print results
+            print(f"\nAnswer:\n{result['answer']}")
+            print(f"\nRetrieved {result['num_chunks_retrieved']} relevant documentation chunks")
+            
+        elif args.code:
+            print(f"\n{'='*60}")
+            print(f"Script Request: {args.code}")
+            print(f"{'='*60}")
+            
+            result = rag.generate_script_from_request(args.code, args.top_k)
+            
+            # Print results
+            print(f"\nGenerated Script:\n{result['script']}")
+            print(f"\nRetrieved {result['num_chunks_retrieved']} relevant documentation chunks")
+        
+        # Save results to JSON
+        with open(args.output, 'w') as f:
+            json.dump(result, f, indent=2)
+        print(f"\nResults saved to: {args.output}")
+        
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
