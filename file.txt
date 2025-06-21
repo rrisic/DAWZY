@@ -1,0 +1,2004 @@
+ reapy
+latest
+Search docs
+Api guide
+Translation Table
+Install or uninstall reapy
+Module Index
+Index
+Docs » reapy.core package Edit on GitHub
+reapy.core package
+Subpackages
+reapy.core.reaper package
+Submodules
+reapy.core.reaper.audio module
+reapy.core.reaper.defer module
+reapy.core.reaper.midi module
+reapy.core.reaper.reaper module
+reapy.core.reaper.ui module
+Module contents
+Submodules
+reapy.core.reapy_object module
+classreapy.core.reapy_object.ReapyMetaclass[source]
+Bases: type
+
+classreapy.core.reapy_object.ReapyObject[source]
+Bases: object
+
+Base class for reapy objects.
+
+classreapy.core.reapy_object.ReapyObjectList[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+Abstract class for list of ReapyObjects.
+
+Module contents
+classreapy.core.ReapyObject[source]
+Bases: object
+
+Base class for reapy objects.
+
+classreapy.core.ReapyObjectList[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+Abstract class for list of ReapyObjects.
+
+classreapy.core.AudioAccessor(id)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+delete()[source]
+Delete audio accessor.
+
+end_time
+End time of audio that can be returned from this accessor.
+
+Return value is in seconds.
+
+Type:	float
+get_samples(start, n_samples_per_channel, n_channels=1, sample_rate=44100)[source]
+Return audio samples.
+
+Parameters:	
+start (float) – Start time in seconds.
+n_samples_per_channel (int) – Number of required samples per channel
+n_channels (int, optional) – Number of required channels (default=1).
+sample_rate (float, optional) – Required sample rate (default=44100).
+Returns:	
+samples – List of length n_samples*n_channels.
+
+Return type:	
+list
+
+Examples
+
+To separate channels use:
+
+>>> samples = audio_accessor.get_samples(0, 1024, 2)
+>>> first_channel = samples[::2]
+>>> second_channel = samples[1::2]
+has_state_changed
+Whether underlying state has changed.
+
+Type:	bool
+hash()[source]
+String that changes only if the underlying samples change.
+
+Type:	str
+start_time
+Start time of audio that can be returned from this accessor.
+
+Return value is in seconds.
+
+Type:	float
+classreapy.core.Envelope(parent, id)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+add_item(position=0.0, length=1.0, pool=0)[source]
+Add automation item to envelope.
+
+Parameters:	
+position (float, optional) – New item position in seconds (default=0).
+length (float) – New item length in seconds (default=0).
+pool (int) – New item pool index. If >= 0 the automation item will be a new instance of that pool (which will be created as an empty instance if it does not exist).
+Returns:	
+item – New automation item.
+
+Return type:	
+reapy.AutomationItem
+
+delete_points_in_range(start, end)[source]
+Delete envelope points between start and end.
+
+Parameters:	
+start (float) – Range start in seconds.
+end (float) – Range end in seconds.
+get_derivatives(time, raw=False)[source]
+Return envelope derivatives of order 1, 2, 3 at a given time.
+
+Parameters:	
+time (float) – Time in seconds.
+raw (bool, optional) – Whether to return raw values or the human-readable version which is printed in REAPER GUI (default=False).
+Returns:	
+d, d2, d3 – First, second and third order derivatives.
+
+Return type:	
+float
+
+Examples
+
+>>> envelope = track.envelopes["Pan"]
+>>> envelope.get_derivatives(10, raw=True)
+(0.10635556358181712, 0.2127113398749741, 0.21271155258652666)
+>>> envelope.get_value(10)  # human-readable
+('10%L', '21%L', '21%L')
+get_value(time, raw=False)[source]
+Return envelope value at a given time.
+
+Parameters:	
+time (float) – Time in seconds.
+raw (bool, optional) – Whether to return raw value or its human-readable version, which is the one that is printed in REAPER GUI (default=False).
+Returns:	
+value – Envelope value.
+
+Return type:	
+float or str
+
+Examples
+
+>>> envelope = track.envelopes["Pan"]
+>>> envelope.get_value(10, raw=True)
+-0.5145481809245827
+>>> envelope.get_value(10)  # human-readable
+'51%R'
+has_valid_id
+Whether ReaScript ID is still valid.
+
+For instance, if envelope has been deleted, ID will not be valid anymore.
+
+Type:	bool
+items
+List of automation items in envelope.
+
+Type:	list of reapy.AutomationItem
+n_items
+Number of automation items in envelope.
+
+Type:	int
+n_points
+Number of points in envelope.
+
+Type:	int
+name
+Envelope name.
+
+Type:	str
+parent
+Envelope parent.
+
+Type:	Take or Track
+classreapy.core.EnvelopeList(parent)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+Container class for the list of envelopes on a Take or Track.
+
+Envelopes can be accessed from the EnvelopeList either by index, name or chunk_name (e.g. “<VOLENV”).
+
+Examples
+
+>>> len(track.envelopes)
+2
+>>> envelope = track.envelopes[0]
+>>> envelope.name
+'Volume'
+>>> envelope == track.envelopes["Volume"]
+True
+>>> envelope == track.envelopes["<VOLENV"]
+True
+>>> [e.name for e in track.envelopes]
+['Volume', 'Pan']
+classreapy.core.FX(parent=None, index=None, parent_id=None)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+FX on a Track or a Take.
+
+close_chain()[source]
+Close FX chain.
+
+close_floating_window()[source]
+Close FX floating window.
+
+close_ui()[source]
+Close user interface.
+
+copy_to_take(take, index=0)[source]
+Copy FX to take.
+
+Parameters:	
+take (Take) – Destination take.
+index (int) – Index on destination take.
+See also
+
+FX.move_to_take()
+
+copy_to_track(track, index=0)[source]
+Copy FX to track.
+
+Parameters:	
+track (Track) – Destination track.
+index (int) – Index on destination track.
+See also
+
+FX.move_to_track()
+
+delete()[source]
+Delete FX.
+
+disable()[source]
+Disable FX.
+
+enable()[source]
+Enable FX.
+
+functions= {'TakeFX_': {}, 'TrackFX_': {}}
+is_enabled
+Whether FX is enabled.
+
+Type:	bool
+is_online
+Whether FX is online.
+
+Type:	bool
+is_ui_open
+Whether FX user interface is open.
+
+Type:	bool
+make_offline()[source]
+Make FX offline.
+
+make_online()[source]
+Make FX online.
+
+move_to_take(take, index=0)[source]
+Move FX to take.
+
+Parameters:	
+take (Take) – Destination take.
+index (int) – Index on destination take.
+See also
+
+FX.copy_to_take()
+
+move_to_track(track, index=0)[source]
+Move FX to track.
+
+Parameters:	
+track (Track) – Destination track.
+index (int) – Index on destination track.
+See also
+
+FX.copy_to_track()
+
+n_inputs
+Number of inputs of FX.
+
+Type:	int
+n_outputs
+Number of outputs of FX.
+
+Type:	int
+n_params
+Number of parameters.
+
+Type:	int
+n_presets
+Number of presets.
+
+Type:	int
+name
+FX name.
+
+Type:	str
+open_chain()[source]
+Open FX chain with focus on FX.
+
+open_floating_window()[source]
+Open FX floating window.
+
+open_ui()[source]
+Open FX user interface.
+
+params
+List of parameters.
+
+Type:	FXParamsList
+parent
+FX parent.
+
+Type:	Track or Take
+preset
+FX preset name.
+
+Type:	str
+Attribute can be set by passing a str or int. In the first case, the str can either be a preset name or the path to a .vstpreset file. Otherwise, the int is the preset index.
+
+preset_file
+Path to FX preset file.
+
+Type:	str
+preset_index
+FX preset index.
+
+Type:	int
+use_next_preset()[source]
+Use next preset in the presets list.
+
+use_previous_preset()[source]
+Use previous preset in the presets list.
+
+window
+Floating window associated to FX, if it exists.
+
+Type:	Window or NoneType
+classreapy.core.FXList(parent)[source]
+Bases: reapy.core.reapy_object.ReapyObjectList
+
+Container class for a list of FXs.
+
+FXs can be accessed by name or index.
+
+Examples
+
+>>> fx_list = track.fxs
+>>> fx_list[0]
+FX(parent_id="(MediaTrack*)0x0000000006CDEBE0", index=0)
+>>> len(fx_list)
+1
+>>> fx_list["VST: ReaComp (Cockos)"]
+FX(parent_id="(MediaTrack*)0x0000000006CDEBE0", index=0)
+classreapy.core.FXParam(value, parent_list, index, functions)[source]
+Bases: float
+
+FX parameter.
+
+add_envelope()[source]
+Create envelope for the parameter and return it.
+
+Returns:	envelope – New envelope for the parameter.
+Return type:	Envelope
+Notes
+
+If the envelope already exists, the function returns it.
+
+envelope
+Parameter envelope (or None if it doesn’t exist).
+
+Type:	Envelope or NoneType
+format_value(value)[source]
+Return human readable string for value.
+
+It is the way value would be printed in REAPER GUI if it was the actual parameter value. Only works with FX that support Cockos VST extensions.
+
+Parameters:	value (float) – Value to format.
+Returns:	formatted – Formatted value.
+Return type:	str
+formatted
+Human readable string for parameter value.
+
+Only works with FX that support Cockos VST extensions.
+
+Type:	str
+name
+Parameter name.
+
+Type:	str
+normalized
+Normalized FX parameter.
+
+Attribute can be set with a float, but be careful that since floats are immutable, this parameter won’t have to right value anymore. See Examples below.
+
+Type:	NormalizedFXParam
+Examples
+
+Say the parameter range is (0.0, 20.0).
+
+>>> param = fx.params[0]
+>>> param
+10.0
+>>> param.normalized
+0.5
+If you set the parameter like below, the parameter moves in REPAER, but the FXParam object you are using is not valid anymore.
+
+>>> param.normalized = 1
+>>> param, param.normalized
+10.0, 0.5
+You thus have to grab the updated FXParam from the FX like below.
+
+>>> param = fx.params[0]
+>>> param, param.normalized
+20.0, 1.0
+range
+Parameter range.
+
+Type:	float, float
+classreapy.core.FXParamsList(parent_fx=None, parent_id=None, parent_fx_index=None)[source]
+Bases: reapy.core.reapy_object.ReapyObjectList
+
+Container class for a list of FX parameters.
+
+Parameters can be accessed by name or index.
+
+Examples
+
+>>> params_list = fx.params
+>>> params_list[0]  # Say this is "Dry Gain" parameter
+0.5
+>>> params_list["Dry Gain"]
+0.5
+>>> params_list["Dry Gain"] = 0.1
+>>> params_list[0]
+0.1
+parent_fx
+Parent FX.
+
+Type:	FX
+classreapy.core.CC(parent, index)[source]
+Bases: reapy.core.item.midi_event.MIDIEvent
+
+MIDI CC event.
+
+channel
+CC channel between 0 and 15.
+
+Type:	int
+See also
+
+CC.infos
+For maximum efficiency when querying several properties of a CC.
+channel_message
+CC channel message.
+
+Type:	int
+See also
+
+CC.infos
+For maximum efficiency when querying several properties of a CC.
+infos
+Return infos about CC.
+
+Keys are {“selected”, “muted”, “position”, “channel”, “channel_message”, “messages”}.
+
+Type:	dict
+messages
+CC messages.
+
+Type:	2-list of int
+See also
+
+CC.infos
+For maximum efficiency when querying several properties of a CC.
+muted
+Whether CC is muted.
+
+Type:	bool
+See also
+
+CC.infos
+For maximum efficiency when querying several properties of a CC.
+position
+CC position in seconds.
+
+Type:	float
+See also
+
+CC.infos
+For maximum efficiency when querying several properties of a CC.
+selected
+Whether CC is selected.
+
+Type:	bool
+See also
+
+CC.infos
+For maximum efficiency when querying several properties of a CC.
+classreapy.core.CCList(parent)[source]
+Bases: reapy.core.item.midi_event.MIDIEventList
+
+classreapy.core.Item(id)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+active_take
+Return the active take of the item.
+
+Returns:	take – Active take of the item.
+Return type:	Take
+add_take()[source]
+Create and return a new take in item.
+
+Returns:	take – New take in item.
+Return type:	Take
+delete()[source]
+Delete item.
+
+get_info_value(param_name)[source]
+get_take(index)[source]
+Return index-th take of item.
+
+Parameters:	index (int) – Take index.
+Returns:	take – index-th take of media item.
+Return type:	Take
+has_valid_id
+Whether ReaScript ID is still valid.
+
+For instance, if item has been deleted, ID will not be valid anymore.
+
+Type:	bool
+is_selected
+Return whether item is selected.
+
+Returns:	is_selected – Whether item is selected.
+Return type:	bool
+length
+Return item length in seconds.
+
+Returns:	length – Item length in seconds.
+Return type:	float
+n_takes
+Return the number of takes of media item.
+
+Returns:	n_takes – Number of takes of media item.
+Return type:	int
+position
+Return item position in seconds.
+
+Returns:	position – Item position in seconds.
+Return type:	float
+project
+Item parent project.
+
+Type:	reapy.Project
+set_info_value(param_name, value)[source]
+split(position)[source]
+Split item and return left and right parts.
+
+Parameters:	position (float) – Split position in seconds.
+Returns:	left, right – Left and right parts of the split.
+Return type:	Item
+takes
+Return list of all takes of media item.
+
+Returns:	takes – List of all takes of media item.
+Return type:	list of Take
+track
+Parent track of item.
+
+Set it by passing a track, or a track index.
+
+Type:	Track
+Examples
+
+>>> track0, track1 = project.tracks[0:2]
+>>> item = track0.items[0]
+>>> item.track == track0
+True
+>>> item.track = track1  # Move to track 1
+>>> item.track = 0  # Move to track 0
+update()[source]
+Update item in REAPER interface.
+
+classreapy.core.Note(parent, index)[source]
+Bases: reapy.core.item.midi_event.MIDIEvent
+
+MIDI note.
+
+channel
+Note channel between 0 and 15.
+
+Type:	int
+See also
+
+Note.infos
+For maximum efficiency when querying several properties of a Note.
+end
+Note end in seconds.
+
+Type:	float
+See also
+
+Note.infos
+For maximum efficiency when querying several properties of a Note.
+infos
+Return infos about note.
+
+Keys are {“selected”, “muted”, “start”, “end”, “channel”, “pitch”, “velocity”}.
+
+Type:	dict
+muted
+Whether note is muted.
+
+Type:	bool
+See also
+
+Note.infos
+For maximum efficiency when querying several properties of a Note.
+pitch
+Note pitch between 0 and 127.
+
+Type:	int
+See also
+
+Note.infos
+For maximum efficiency when querying several properties of a Note.
+selected
+Whether note is selected.
+
+Type:	bool
+See also
+
+Note.infos
+For maximum efficiency when querying several properties of a Note.
+start
+Note start in seconds.
+
+Type:	float
+See also
+
+Note.infos
+For maximum efficiency when querying several properties of a Note.
+velocity
+Note velocity between 0 and 127.
+
+Type:	int
+See also
+
+Note.infos
+For maximum efficiency when querying several properties of a Note.
+classreapy.core.NoteList(parent)[source]
+Bases: reapy.core.item.midi_event.MIDIEventList
+
+classreapy.core.Source(id)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+delete()[source]
+Delete source. Be sure that no references to source remains.
+
+filename
+Return source file name.
+
+Returns:	filename – Source file name.
+Return type:	str
+has_valid_id
+Whether ReaScript ID is still valid.
+
+For instance, if source has been deleted, ID will not be valid anymore.
+
+Type:	bool
+length(unit='seconds')[source]
+Return source length in unit.
+
+Parameters:	unit ({"beats", "seconds"}) –
+Returns:	length – Source length in unit.
+Return type:	float
+n_channels
+Return number of channels in source media.
+
+Returns:	n_channels – Number of channels in source media.
+Return type:	int
+sample_rate
+Return source sample rate.
+
+Returns:	sample_rate – Source sample rate.
+Return type:	int
+type
+Return source type (“WAV, “MIDI”, etc.).
+
+Returns:	type – Source type.
+Return type:	str
+classreapy.core.Take(id)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+add_audio_accessor()[source]
+Create audio accessor and return it.
+
+Returns:	audio_accessor – Audio accessor on take.
+Return type:	AudioAccessor
+add_event(message, position, unit='seconds')[source]
+Add generic event to the take at position.
+
+Note
+
+⋅ No sort events during this call ⋅ Inserting notes within this function causes problems
+
+(wrong note on and off timing), this is known REAPER bug. Use Take.add_note instead.
+Parameters:	
+message (Iterable[int]) – Can be any message buffer, for example: (0xb0, 64, 127) which is CC64 val127 on channel 1
+position (float) – position at take
+unit (str, optional) – “beats”|”ppq”|”seconds” (default are seconds)
+See also
+
+Take.add_note()
+
+add_fx(name, even_if_exists=True)[source]
+Add FX to track and return it.
+
+Parameters:	
+name (str) – FX name.
+even_if_exists (bool, optional) – Whether the FX should be added even if there already is an instance of the same FX on the track (default=True).
+Returns:	
+fx – New FX on take (or previously existing instance of FX if even_if_exists=False).
+
+Return type:	
+FX
+
+Raises:	
+ValueError – If there is no FX with the specified name.
+
+add_note(start, end, pitch, velocity=100, channel=0, selected=False, muted=False, unit='seconds', sort=True)[source]
+Add MIDI note to take.
+
+Parameters:	
+start (float) – Note start. Unit depends on unit.
+end (float) – Note end. Unit depends on unit.
+pitch (int) – Note pitch between 0 and 127.
+velocity (int, optional) – Note velocity between 0 and 127 (default=100).
+channel (int, optional) – MIDI channel between 0 and 15.
+selected (bool, optional) – Whether to select new note (default=False).
+muted (bool) – Whether to mute new note (default=False).
+unit ({"seconds", "ppq", "beats"}, optional) – Time unit for start and end (default=”seconds”). "ppq" refers to MIDI ticks.
+sort (bool, optional) – Whether to resort notes after creating new note (default=True). If False, then the new note will be take.notes[-1]. Otherwise it will be at its place in the time-sorted list take.notes. Set to False for improved efficiency when adding several notes, then call Take.sort_events at the end.
+See also
+
+Take.sort_events()
+
+add_sysex(message, position, unit='seconds', evt_type=-1)[source]
+Add SysEx event to take.
+
+Notes
+
+⋅ No sort events during this call ⋅ No need to add 0xf0 … 0xf7 bytes (they will be doubled)
+
+Parameters:	
+message (Iterable[int]) – Can be any message buffer, for example: (0xb0, 64, 127) which is CC64 val127 on channel 1
+position (float) – position at take
+unit (str, optional) – “beats”|”ppq”|”seconds” (default are seconds)
+evt_type (int (default -1)) – Allowable types are ⋅ -1:sysex (msg should not include bounding F0..F7), ⋅ 1-14:MIDI text event types, ⋅ 15=REAPER notation event.
+beat_to_ppq(beat)[source]
+Convert beat number (from project start) to MIDI ticks (of the take).
+
+Parameters:	beat (float) – Beat time to convert in beats.
+Returns:	ppq – Converted time in MIDI ticks of current take.
+Return type:	float
+See also
+
+Take.ppq_to_beat(), Take.time_to_ppq()
+
+cc_events
+List of CC events on take.
+
+Type:	CCList
+envelopes
+fxs
+FXs on take.
+
+Type:	FXList
+get_info_value(param_name)[source]
+guid
+Used for communication within other scripts.
+
+Type:	str
+has_valid_id
+Whether ReaScript ID is still valid.
+
+For instance, if take has been deleted, ID will not be valid anymore.
+
+Type:	bool
+is_active
+Whether take is active.
+
+Type:	bool
+is_midi
+Whether take contains MIDI or audio.
+
+Type:	bool
+item
+Parent item.
+
+Type:	Item
+make_active_take()[source]
+Make take active.
+
+midi_events
+Get all midi events as EventList.
+
+Returns:	
+Return type:	MIDIEventList
+midi_hash(notes_only=False)[source]
+Get hash of MIDI-data to compare with later.
+
+Parameters:	notes_only (bool, (False by default)) – count only notes if True
+Returns:	
+Return type:	str
+n_cc
+Number of MIDI CC events in take (always 0 for audio takes).
+
+Type:	int
+n_envelopes
+Number of envelopes on take.
+
+Type:	int
+n_fxs
+Number of FXs on take.
+
+Type:	int
+n_midi_events
+Number of MIDI events in take.
+
+Type:	int
+n_notes
+Number of MIDI notes in take (always 0 for audio takes).
+
+Type:	int
+n_text_sysex
+Number of MIDI text/sysex events in take (0 for audio takes).
+
+Type:	int
+name
+Take name.
+
+Type:	str
+notes
+List of MIDI notes on take.
+
+Unless Take.add_note has been called with sort=False, notes are time-sorted.
+
+Type:	NoteList
+ppq_to_beat(ppq)[source]
+Convert time in MIDI ticks (from take’s start) to beats (from project’s start).
+
+Parameters:	ppq (float) – Time to convert in MIDI ticks.
+Returns:	beat – Converted time in beats.
+Return type:	float
+See also
+
+Take.beat_to_ppq(), Take.ppq_to_time()
+
+ppq_to_time(ppq)[source]
+Convert time in MIDI ticks to seconds.
+
+Parameters:	ppq (float) – Time to convert in MIDI ticks.
+Returns:	time – Converted time in seconds.
+Return type:	float
+See also
+
+Take.time_to_ppq()
+
+project
+Take parent project.
+
+Type:	reapy.Project
+select_all_midi_events(select=True)[source]
+Select or unselect all MIDI events.
+
+Parameters:	select (bool) – Whether to select or unselect events.
+See also
+
+Take.unselect_all_midi_events()
+
+set_info_value(param_name, value)[source]
+sort_events()[source]
+Sort MIDI events on take.
+
+This is only needed if Take.add_note was called with sort=False.
+
+Examples
+
+The following example creates 100 MIDI notes on take in reversed order, with sort=False for efficiency. Thus, take.notes is not time-sorted. take.sort_events is called afterwards so that take.notes is time-sorted.
+
+>>> for i in range(100):
+...     take.add_note(99 - i, 100 - i, pitch=0, sort=False)
+...
+>>> take.notes[0].start, take.notes[1].start
+99.0, 98.0
+>>> take.sort_events()
+>>> take.notes[0].start, take.notes[1].start
+0.0, 1.0
+source
+Take source.
+
+Type:	Source
+start_offset
+Start time of the take relative to start of source file.
+
+Type:	float
+time_to_ppq(time)[source]
+Convert time in seconds to MIDI ticks.
+
+Parameters:	time (float) – Time to convert in seconds.
+Returns:	ppq – Converted time in MIDI ticks.
+Return type:	float
+See also
+
+Take.ppq_to_time()
+
+track
+Parent track of take.
+
+Type:	Track
+unselect_all_midi_events()[source]
+Unselect all MIDI events.
+
+See also
+
+Take.select_all_midi_events()
+
+visible_fx
+Visible FX in FX chain if any, else None.
+
+Type:	FX or NoneType
+classreapy.core.Marker(parent_project=None, index=None, parent_project_id=None)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+delete()[source]
+Delete marker.
+
+position
+Return marker position.
+
+Returns:	position – Marker position in seconds.
+Return type:	float
+classreapy.core.Project(id=None, index=-1)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+REAPER project.
+
+add_marker(position, name='', color=0)[source]
+Create new marker and return its index.
+
+Parameters:	
+position (float) – Marker position in seconds.
+name (str, optional) – Marker name.
+color (int or tuple of int, optional) – Marker color. Integers correspond to REAPER native colors. Tuple must be RGB triplets of integers between 0 and 255.
+Returns:	
+marker – New marker.
+
+Return type:	
+reapy.Marker
+
+Notes
+
+If a marker with the same position and name already exists, no new marker will be created, and the existing marker index will be returned.
+
+add_region(start, end, name='', color=0)[source]
+Create new region and return its index.
+
+Parameters:	
+start (float) – Region start in seconds.
+end (float) – Region end in seconds.
+name (str, optional) – Region name.
+color (int or tuple of int, optional) – Region color. Integers correspond to REAPER native colors. Tuple must be RGB triplets of integers between 0 and 255.
+Returns:	
+region – New region.
+
+Return type:	
+reapy.Region
+
+add_track(index=0, name='')[source]
+Add track at a specified index.
+
+Parameters:	
+index (int) – Index at which to insert track.
+name (str, optional) – Name of created track.
+Returns:	
+track – New track.
+
+Return type:	
+Track
+
+any_track_solo
+Test whether any track is soloed in project.
+
+Returns:	any_track_solo – Whether any track is soloed in project.
+Return type:	bool
+beats_to_time(beats)[source]
+Convert beats to time in seconds.
+
+Parameters:	beats (float) – Time in beats
+Returns:	time – Converted time in seconds.
+Return type:	float
+See also
+
+Project.time_to_beats()
+
+begin_undo_block()[source]
+Start a new undo block.
+
+bpi
+Return project BPI (numerator of time signature).
+
+Returns:	bpi – Numerator of time signature.
+Return type:	float
+bpm
+Project BPM (beats per minute).
+
+Type:	float
+buffer_position
+Position of next audio block being processed in seconds.
+
+Type:	float
+See also
+
+Project.play_position
+Latency-compensated actual-what-you-hear position.
+bypass_fx_on_all_tracks(bypass=True)[source]
+Bypass or un-bypass FX on all tracks.
+
+Parameters:	bypass (bool) – Whether to bypass or un-bypass FX.
+can_redo
+Whether redo is possible.
+
+Type:	bool
+can_undo
+Whether undo is possible.
+
+Type:	bool
+close()[source]
+Close project and its correspondig tab.
+
+cursor_position
+Edit cursor position in seconds.
+
+Type:	float
+disarm_rec_on_all_tracks()[source]
+Disarm record on all tracks.
+
+end_undo_block(description='')[source]
+End undo block.
+
+Parameters:	description (str) – Undo block description.
+focused_fx
+FX that has focus if any, else None.
+
+Type:	FX or NoneType
+get_ext_state(section, key, pickled=False)[source]
+Return external state of project.
+
+Parameters:	
+section (str) –
+key (str) –
+pickled (bool) – Whether data was pickled or not.
+Returns:	
+value – If key or section does not exist an empty string is returned.
+
+Return type:	
+str
+
+get_info_string(param_name: str) → str[source]
+Parameters:	param_name (str) –
+MARKER_GUID:X :get the GUID (unique ID) of the marker or region
+with index X, where X is the index passed to EnumProjectMarkers, not necessarily the displayed number
+RECORD_PATH :
+recording directory – may be blank or a relative path, to get the effective path see GetProjectPathEx()
+RENDER_FILE : render directory RENDER_PATTERN : render file name (may contain wildcards) RENDER_FORMAT : base64-encoded sink configuration
+
+(see project files, etc). Callers can also pass a simple 4-byte string (non-base64-encoded), e.g. “evaw” or “l3pm”, to use default settings for that sink type.
+RENDER_FORMAT2 :base64-encoded secondary sink configuration.
+Callers can also pass a simple 4-byte string (non-base64-encoded), e.g. “evaw” or “l3pm”, to use default settings for that sink type, or “” to disable secondary render. Formats available on this machine: “wave” “aiff” “iso ” “ddp ” “flac” “mp3l” “oggv” “OggS” “FFMP” “GIF ” “LCF ” “wvpk”
+get_info_value(param_name: str) → float[source]
+Parameters:	param_name (str) –
+RENDER_SETTINGS :&(1|2)=0:master mix, &1=stems+master mix,
+&2=stems only, &4=multichannel tracks to multichannel files, &8=use render matrix, &16=tracks with only mono media to mono files, &32=selected media items, &64=selected media items via master
+RENDER_BOUNDSFLAG :0=custom time bounds, 1=entire project,
+2=time selection, 3=all project regions, 4=selected media items, 5=selected project regions
+RENDER_CHANNELS : number of channels in rendered file RENDER_SRATE : sample rate of rendered file
+
+(or 0 for project sample rate)
+RENDER_STARTPOS : render start time when RENDER_BOUNDSFLAG=0 RENDER_ENDPOS : render end time when RENDER_BOUNDSFLAG=0 RENDER_TAILFLAG : apply render tail setting when rendering:
+
+&1=custom time bounds, &2=entire project, &4=time selection, &8=all project regions, &16=selected media items, &32=selected project regions
+RENDER_TAILMS :tail length in ms to render
+(only used if RENDER_BOUNDSFLAG and RENDER_TAILFLAG are set)
+RENDER_ADDTOPROJ : 1=add rendered files to project RENDER_DITHER : &1=dither, &2=noise shaping, &4=dither stems,
+
+&8=noise shaping on stems
+PROJECT_SRATE : samplerate (ignored unless PROJECT_SRATE_USE set) PROJECT_SRATE_USE : set to 1 if project samplerate is used
+
+get_play_rate(position)[source]
+Return project play rate at a given position.
+
+Parameters:	position (float) – Position in seconds.
+Returns:	play_rate – Play rate at the given position.
+Return type:	float
+See also
+
+Project.play_rate()
+Project play rate at the current position.
+get_selected_item(index)[source]
+Return index-th selected item.
+
+Parameters:	index (int) – Item index.
+Returns:	item – index-th selected item.
+Return type:	Item
+get_selected_track(index)[source]
+Return index-th selected track.
+
+Parameters:	index (int) – Track index.
+Returns:	track – index-th selected track.
+Return type:	Track
+glue_items(within_time_selection=False)[source]
+Glue items (action shortcut).
+
+Parameters:	within_time_selection (bool) – If True, glue items within time selection.
+has_valid_id
+Whether ReaScript ID is still valid.
+
+For instance, if project has been closed, ID will not be valid anymore.
+
+Type:	bool
+is_current_project
+Whether project is current project.
+
+Type:	bool
+is_dirty
+Whether project is dirty (i.e. needing save).
+
+Type:	bool
+is_paused
+Return whether project is paused.
+
+Type:	bool
+is_playing
+Return whether project is playing.
+
+Type:	bool
+is_recording
+Return whether project is recording.
+
+Type:	bool
+is_stopped
+Return whether project is stopped.
+
+Type:	bool
+items
+List of items in project.
+
+Type:	list of Item
+last_touched_fx
+Last touched FX and corresponding parameter index.
+
+Type:	FX, int or NoneType, NoneType
+Notes
+
+Only Track FX are detected by this property. If last touched FX is a Take FX, this property is (None, None).
+
+Examples
+
+>>> fx, index = project.last_touched_fx
+>>> fx.name
+'VSTi: ReaSamplOmatic5000 (Cockos)'
+>>> fx.params[index].name
+"Volume"
+length
+Project length in seconds.
+
+Type:	float
+make_current_project()[source]
+Set project as current project.
+
+Can also be used as a context manager to temporarily set the project as current project and then go back to the original situation.
+
+Examples
+
+>>> p1 = reapy.Project()  # current project
+>>> p2 = reapy.Project(1)  # other project
+>>> p2.make_current_project()  # now p2 is current project
+>>> with p1.make_current_project():
+...     do_something()  # current project is temporarily p1
+>>> # and p2 is current project again
+mark_dirty()[source]
+Mark project as dirty (i.e. needing save).
+
+markers
+List of project markers.
+
+Type:	list of reapy.Marker
+master_track
+Project master track.
+
+Type:	Track
+mute_all_tracks(mute=True)[source]
+Mute or unmute all tracks.
+
+Parameters:	mute (bool, optional) – Whether to mute or unmute all tracks (default=True).
+See also
+
+Project.unmute_all_tracks()
+
+n_items
+Number of items in project.
+
+Type:	int
+n_markers
+Number of markers in project.
+
+Type:	int
+n_regions
+Number of regions in project.
+
+Type:	int
+n_selected_items
+Number of selected media items.
+
+Type:	int
+n_selected_tracks
+Number of selected tracks in project (excluding master).
+
+Type:	int
+n_tempo_markers
+Number of tempo/time signature markers in project.
+
+Type:	int
+n_tracks
+Number of tracks in project.
+
+Type:	int
+name
+Project name.
+
+Type:	str
+open(in_new_tab=False)[source]
+Open project, if it was closed by Project.close.
+
+Parameters:	in_new_tab (bool, optional) – whether should be opened in new tab
+Raises:	RuntimeError – If hasn’t been closed by Project.close yet
+path
+Project path.
+
+Type:	str
+pause()[source]
+Hit pause button.
+
+perform_action(action_id)[source]
+Perform action with ID action_id in the main Actions section.
+
+Parameters:	action_id (int) – Action ID in the main Actions section.
+play()[source]
+Hit play button.
+
+play_position
+Latency-compensated actual-what-you-hear position in seconds.
+
+Type:	float
+See also
+
+Project.buffer_position
+Position of next audio block being processed.
+play_rate
+Project play rate at the cursor position.
+
+Type:	float
+See also
+
+Project.get_play_rate
+Return project play rate at a specified time.
+record()[source]
+Hit record button.
+
+redo()[source]
+Redo last action.
+
+Raises:	RedoError – If impossible to redo.
+regions
+List of project regions.
+
+Type:	list of reapy.Region
+save(force_save_as=False)[source]
+Save project.
+
+Parameters:	force_save_as (bool) – Force using “Save as” instead of “Save”.
+select(start, end=None, length=None)[source]
+select_all_items(selected=True)[source]
+Select or unselect all items, depending on selected.
+
+Parameters:	selected (bool) – Whether to select or unselect items.
+select_all_tracks()[source]
+Select all tracks.
+
+selected_envelope
+Project selected envelope.
+
+Type:	reapy.Envelope or None
+selected_items
+List of all selected items.
+
+Type:	list of Item
+See also
+
+Project.get_selected_item
+Return a specific selected item.
+selected_tracks
+List of selected tracks (excluding master).
+
+Type:	list of Track
+set_ext_state(section, key, value, pickled=False)[source]
+Set external state of project.
+
+Parameters:	
+section (str) –
+key (str) –
+value (Union[Any, str]) – State value. Will be dumped to str using either pickle if pickled is True or json. Length of the dumped value must not be over 2**31 - 2.
+pickled (bool, optional) – Data will be pickled with the last version if True. If you using mypy as type checker, typing_extensions.Literal[True] has to be used for pickled.
+Raises:	
+ValueError – If dumped value has length over 2**31 - 2.
+
+set_info_string(param_name, param_string)[source]
+Parameters:	
+param_name (str) –
+MARKER_GUID:X :get the GUID (unique ID) of the marker or region
+with index X, where X is the index passed to EnumProjectMarkers, not necessarily the displayed number
+RECORD_PATH :
+recording directory – may be blank or a relative path, to get the effective path see GetProjectPathEx()
+RENDER_FILE : render directory RENDER_PATTERN : render file name (may contain wildcards) RENDER_FORMAT : base64-encoded sink configuration
+
+(see project files, etc). Callers can also pass a simple 4-byte string (non-base64-encoded), e.g. “evaw” or “l3pm”, to use default settings for that sink type.
+RENDER_FORMAT2 :base64-encoded secondary sink configuration.
+Callers can also pass a simple 4-byte string (non-base64-encoded), e.g. “evaw” or “l3pm”, to use default settings for that sink type, or “” to disable secondary render. Formats available on this machine: “wave” “aiff” “iso ” “ddp ” “flac” “mp3l” “oggv” “OggS” “FFMP” “GIF ” “LCF ” “wvpk”
+param_string (str) –
+set_info_value(param_name, param_value)[source]
+Parameters:	
+param_name (str) –
+RENDER_SETTINGS :&(1|2)=0:master mix, &1=stems+master mix,
+&2=stems only, &4=multichannel tracks to multichannel files, &8=use render matrix, &16=tracks with only mono media to mono files, &32=selected media items, &64=selected media items via master
+RENDER_BOUNDSFLAG :0=custom time bounds, 1=entire project,
+2=time selection, 3=all project regions, 4=selected media items, 5=selected project regions
+RENDER_CHANNELS : number of channels in rendered file RENDER_SRATE : sample rate of rendered file
+
+(or 0 for project sample rate)
+RENDER_STARTPOS : render start time when RENDER_BOUNDSFLAG=0 RENDER_ENDPOS : render end time when RENDER_BOUNDSFLAG=0 RENDER_TAILFLAG : apply render tail setting when rendering:
+
+&1=custom time bounds, &2=entire project, &4=time selection, &8=all project regions, &16=selected media items, &32=selected project regions
+RENDER_TAILMS :tail length in ms to render
+(only used if RENDER_BOUNDSFLAG and RENDER_TAILFLAG are set)
+RENDER_ADDTOPROJ : 1=add rendered files to project RENDER_DITHER : &1=dither, &2=noise shaping, &4=dither stems,
+
+&8=noise shaping on stems
+PROJECT_SRATE : samplerate (ignored unless PROJECT_SRATE_USE set) PROJECT_SRATE_USE : set to 1 if project samplerate is used
+
+param_value (float) –
+solo_all_tracks()[source]
+Solo all tracks in project.
+
+See also
+
+Project.unsolo_all_tracks()
+
+stop()[source]
+Hit stop button.
+
+time_selection
+Project time selection.
+
+time_selection : reapy.TimeSelection
+
+Can be set and deleted as follows:
+
+>>> project = reapy.Project()
+>>> project.time_selection = 3, 8  # seconds
+>>> del project.time_selection
+time_signature
+Project time signature.
+
+This does not reflect tempo envelopes but is purely what is set in the project settings.
+
+bpm :float
+Project BPM (beats per minute)
+bpi :float
+Project BPI (numerator of time signature)
+time_to_beats(time)[source]
+Convert time in seconds to beats.
+
+Parameters:	time (float) – Time in seconds.
+Returns:	beats – Time in beats.
+Return type:	float
+See also
+
+Projecr.beats_to_time()
+
+tracks
+List of project tracks.
+
+Type:	TrackList
+undo()[source]
+Undo last action.
+
+Raises:	UndoError – If impossible to undo.
+unmute_all_tracks()[source]
+Unmute all tracks.
+
+unselect_all_tracks()[source]
+Unselect all tracks.
+
+unsolo_all_tracks()[source]
+Unsolo all tracks in project.
+
+See also
+
+Project.solo_all_tracks()
+
+classreapy.core.Region(parent_project=None, index=None, parent_project_id=None)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+add_rendered_track(track)[source]
+Add track to region render matrix for this region.
+
+Parameters:	track (Track) – Track to add.
+See also
+
+Region.add_rendered_tracks()
+Efficiently add several tracks to region render matrix.
+Region.remove_rendered_track(), Region.remove_rendered_tracks()
+
+add_rendered_tracks(tracks)[source]
+Efficiently add several tracks to region render matrix.
+
+Parameters:	tracks (list of Track) – Tracks to add.
+See also
+
+Region.remove_rendered_tracks()
+
+delete()[source]
+Delete region.
+
+end
+Region end.
+
+Type:	float Region end in seconds.
+remove_rendered_track(track)[source]
+Remove track from region render matrix for this region.
+
+Parameters:	track (Track) – Track to remove.
+See also
+
+Region.add_rendered_tracks(), Region.remove_rendered_track()
+
+Region.remove_rendered_tracks()
+Efficiently remove several tracks from render matrix.
+remove_rendered_tracks(tracks)[source]
+Efficiently remove several tracks from region render matrix.
+
+Parameters:	tracks (list of Track) – Tracks to remove.
+See also
+
+Region.add_rendered_tracks()
+
+rendered_tracks
+List of tracks for this region in region render matrix.
+
+Type:	list of Track
+start
+Region start.
+
+Type:	float
+classreapy.core.TimeSelection(parent_project=None, parent_project_id=None)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+end
+Return time selection end in seconds.
+
+Returns:	end – Time selection end in seconds.
+Return type:	float
+is_looping
+Return whether looping is enabled.
+
+Returns:	looping – Whether looping is enabled.
+Return type:	bool
+length
+Return time selection length in seconds.
+
+Returns:	length – Time selection length in seconds.
+Return type:	float
+loop()[source]
+Enable time selection looping.
+
+See also
+
+TimeSelection.is_looping(), TimeSelection.unloop()
+
+shift(direction='')[source]
+Shift time selection.
+
+Parameters:	direction ({"right", "left"}) – Direction to which time selection will be shifted. Nothing happens if direction is neither “right” nor “left”. Note that the shift size depends on whether snap is enabled and of the zoom level.
+start
+Return time selection start in seconds.
+
+Returns:	start – Time selection start in seconds.
+Return type:	float
+unloop()[source]
+Disable time selection looping.
+
+See also
+
+TimeSelection.is_looping(), TimeSelection.loop()
+
+classreapy.core.AutomationItem(envelope=None, index=0, envelope_id=None)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+delete_points_in_range(start, end)[source]
+Delete points between start and end.
+
+Parameters:	
+start (float) – Range start in seconds.
+end (float) – Range end in seconds.
+length
+Return item length in seconds.
+
+Returns:	length – Item length in seconds.
+Return type:	float
+n_points
+Return number of automation points in item.
+
+Returns:	n_points – Number of automation points in item.
+Return type:	int
+pool
+Return item pool.
+
+Returns:	pool – Item pool.
+Return type:	int
+position
+Return item position in seconds.
+
+Returns:	position – Item position in seconds.
+Return type:	float
+classreapy.core.Send(track=None, index=0, track_id=None, type='send')[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+Track send.
+
+index
+position on the track
+
+Type:	int
+is_muted
+Type:	bool
+is_phase_flipped
+Type:	bool
+track_id
+Type:	str
+type
+can be ‘send’, ‘hardware’ or ‘receive’
+
+Type:	str
+delete()[source]
+Delete send.
+
+dest_track
+Destination track.
+
+Type:	Track
+flip_phase()[source]
+Toggle whether phase is flipped.
+
+get_info(param_name)[source]
+Get raw info from GetTrackSendInfo_Value.
+
+Parameters:	param_name (str) –
+B_MUTE : bool * B_PHASE : bool *, true to flip phase B_MONO : bool * D_VOL : double *, 1.0 = +0dB etc D_PAN : double *, -1..+1 D_PANLAW : double *,1.0=+0.0db, 0.5=-6dB, -1.0 = projdef etc I_SENDMODE : int *, 0=post-fader, 1=pre-fx, 2=post-fx (deprecated),
+
+3=post-fx
+I_AUTOMODE :int *:automation mode (-1=use track automode,
+0=trim/off, 1=read, 2=touch, 3=write, 4=latch)
+I_SRCCHAN : int *, index,&1024=mono, -1 for none I_DSTCHAN : int *, index, &1024=mono, otherwise stereo pair,
+
+hwout:&512=rearoute
+I_MIDIFLAGS :int *, low 5 bits=source channel 0=all, 1-16,
+next 5 bits=dest channel, 0=orig, 1-16=chan
+P_DESTTRACK :read only, returns MediaTrack *,
+destination track, only applies for sends/recvs
+P_SRCTRACK :read only, returns MediaTrack *,
+source track, only applies for sends/recvs
+P_ENV:<envchunkname :read only, returns TrackEnvelope *.
+Call with :<VOLENV, :<PANENV, etc appended.
+Returns:	
+Return type:	Union[bool, track id(str)]
+get_sws_info(param_name)[source]
+Raw value from BR_GetSetTrackSendInfo.
+
+Parameters:	param_name (str) –
+B_MUTE : send mute state (1.0 if muted, otherwise 0.0) B_PHASE : send phase state (1.0 if phase is inverted, otherwise 0.0) B_MONO : send mono state (1.0 if send is set to mono, otherwise 0.0) D_VOL : send volume (1.0=+0dB etc…) D_PAN : send pan (-1.0=100%L, 0=center, 1.0=100%R) D_PANLAW : send pan law (1.0=+0.0db, 0.5=-6dB,
+
+-1.0=project default etc…)
+I_SENDMODE :send mode (0=post-fader, 1=pre-fx, 2=post-fx(deprecated),
+3=post-fx)
+I_SRCCHAN :audio source starting channel index or -1 if audio send
+is disabled (&1024=mono…note that in that case, when reading index, you should do (index XOR 1024) to get starting channel index)
+I_DSTCHAN :audio destination starting channel index (&1024=mono
+(and in case of hardware output &512=rearoute)… note that in that case, when reading index, you should do (index XOR (1024 OR 512)) to get starting channel index)
+I_MIDI_SRCCHAN :source MIDI channel, -1 if MIDI send is disabled
+(0=all, 1-16)
+I_MIDI_DSTCHAN :destination MIDI channel, -1 if MIDI send is disabled
+(0=original, 1-16)
+I_MIDI_SRCBUS :source MIDI bus, -1 if MIDI send is disabled
+(0=all, otherwise bus index)
+I_MIDI_DSTBUS :receive MIDI bus, -1 if MIDI send is disabled
+(0=all, otherwise bus index)
+I_MIDI_LINK_VOLPAN : link volume/pan controls to MIDI
+
+Returns:	
+Return type:	float
+is_mono
+Whether send is mono or stereo.
+
+Type:	bool
+is_muted
+Whether send is muted.
+
+Type:	bool
+is_phase_flipped
+Whether send phase is flipped (i.e. signal multiplied by -1).
+
+Type:	bool
+midi_dest
+Send MIDI properties on the receive track.
+
+Returns:	
+Return type:	Tuple[int bus, int channel]
+midi_source
+Send MIDI properties on the send track.
+
+Returns:	
+Return type:	Tuple[int bus, int channel]
+mute()[source]
+Mute send.
+
+pan
+Send pan (from -1=left to 1=right).
+
+Type:	float
+set_info(param_name, value)[source]
+set_sws_info(param_name, value)[source]
+source_track
+Source track.
+
+Type:	Track
+unmute()[source]
+Unmute send.
+
+volume
+Send volume.
+
+Type:	float
+classreapy.core.Track(id, project=None)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+REAPER Track.
+
+Parameters:	
+id (str or int) – If str, can either be a ReaScript ID (usually looking like "(MediaTrack*)0x00000000110A1AD0"), or a track name. In that case, project must be specified. If int, the index of the track. In that case, project must be specified.
+project (Project) – Parent project of the track. Only necessary to retrieve a track from its name or index.
+Examples
+
+In most cases, accessing tracks is better done directly from the parent Project:
+
+>>> project = reapy.Project()
+>>> project.tracks[0]
+Track("(MediaTrack*)0x00000000110A1AD0")
+>>> project.tracks["PIANO"]  # This is actually the same track
+Track("(MediaTrack*)0x00000000110A1AD0")
+But the same track can also directly be instantiated with:
+
+>>> reapy.Track(0, project)
+Track("(MediaTrack*)0x00000000110A1AD0")
+or
+
+>>> reapy.Track("PIANO", project)
+Track("(MediaTrack*)0x00000000110A1AD0")
+GUID
+Track’s GUID.
+
+16-byte GUID, can query or update. If using a _String() function, GUID is a string {xyz-…}.
+
+Type:	str
+add_audio_accessor()[source]
+Create audio accessor and return it.
+
+Returns:	audio_accessor – Audio accessor on track.
+Return type:	AudioAccessor
+add_fx(name, input_fx=False, even_if_exists=True)[source]
+Add FX to track and return it.
+
+Parameters:	
+name (str) – FX name.
+input_fx (bool, optional) – Whether the FX should be an input (aka recording) FX or a standard FX (default=False). Note that if the track is the master track, input_fx=True will create a monitoring FX.
+even_if_exists (bool, optional) – Whether the FX should be added even if there already is an instance of the same FX on the track (default=True).
+Returns:	
+fx – New FX on track (or previously existing instance of FX if even_if_exists=False).
+
+Return type:	
+FX
+
+Raises:	
+ValueError – If there is no FX with the specified name.
+
+add_item(start=0, end=None, length=0)[source]
+Create new item on track and return it.
+
+Parameters:	
+start (float, optional) – New item start in seconds (default=0).
+end (float, optional) – New item end in seconds (default None). If None, length is used instead.
+length (float, optional) – New item length in seconds (default 0).
+Returns:	
+item – New item on track.
+
+Return type:	
+Item
+
+add_midi_item(start=0, end=1, quantize=False)[source]
+Add empty MIDI item to track and return it.
+
+Parameters:	
+start (float, optional) – New item start in seconds (or beats if `quantize`=True).
+end (float, optional) – New item end in seconds (or beats if `quantize`=True).
+quantize (bool, optional) – Whether to count time in beats (True) or seconds (False, default).
+add_send(destination=None)[source]
+Add send to track and return it.
+
+Parameters:	destination (Track or None) – Send destination (default=None). If None, destination is set to hardware output.
+Returns:	send – New send on track.
+Return type:	Send
+automation_mode
+Track automation mode.
+
+One of the following values:
+“latch” “latch preview” “read” “touch” “trim/read” “write”
+Type:	str
+color
+Track color in RGB format.
+
+Type:	tuple of int
+delete()[source]
+Delete track.
+
+depth
+Track depth.
+
+Type:	int
+envelopes
+List of envelopes on track.
+
+Type:	EnvelopeList
+fxs
+List of FXs on track.
+
+Type:	FXList
+get_info_string(param_name)[source]
+get_info_value(param_name)[source]
+has_valid_id
+Whether ReaScript ID is still valid.
+
+For instance, if track has been deleted, ID will not be valid anymore.
+
+Type:	bool
+icon
+Track icon.
+
+Full filename, or relative to resource_path/data/track_icons.
+
+Type:	str
+index
+Track index in GUI (0-based).
+
+Will be None for master track.
+
+Type:	int or None
+Raises:	InvalidObjectError – When track does not exist in REAPER.
+instrument
+First instrument FX on track if it exists, else None.
+
+Type:	FX or None
+is_muted
+Whether track is muted.
+
+Can be manually set to change track state.
+
+is_selected
+Whether track is selected.
+
+Type:	bool
+is_solo
+Whether track is solo.
+
+Can be manually set to change track state.
+
+items
+List of items on track.
+
+Type:	list of Item
+make_only_selected_track()[source]
+Make track the only selected track in parent project.
+
+midi_hash(notes_only=False)[source]
+Get hash of MIDI-data to compare with later.
+
+Parameters:	notes_only (bool, (False by default)) – count only notes if True
+Returns:	
+Return type:	str
+midi_note_names
+mute()[source]
+Mute track (do nothing if track is already muted).
+
+n_envelopes
+Number of envelopes on track.
+
+Type:	int
+n_fxs
+Number of FXs on track.
+
+Type:	int
+n_hardware_sends
+Number of hardware sends on track.
+
+Type:	int
+n_items
+Number of items on track.
+
+Type:	int
+n_receives
+n_sends
+name
+Track name.
+
+Name is “MASTER” for master track, “Track N” if track has no name.
+
+Type:	str Track name .
+parent_track
+Parent track, or None if track has none.
+
+Type:	Track or NoneType
+project
+Track parent project.
+
+Type:	Project
+receives
+select()[source]
+Select track.
+
+sends
+set_info_string(param_name, param_string)[source]
+set_info_value(param_name, param_value)[source]
+solo()[source]
+Solo track (do nothing if track is already solo).
+
+toggle_mute()[source]
+Toggle mute on track.
+
+toggle_solo()[source]
+Toggle solo on track.
+
+unmute()[source]
+Unmute track (do nothing if track is not muted).
+
+unselect()[source]
+Unselect track.
+
+unsolo()[source]
+Unsolo track (do nothing if track is not solo).
+
+visible_fx
+Visible FX in FX chain if any, else None.
+
+Type:	FX or NoneType
+classreapy.core.TrackList(parent)[source]
+Bases: reapy.core.reapy_object.ReapyObjectList
+
+Container for a project’s track list.
+
+Examples
+
+>>> tracks = project.tracks
+>>> len(tracks)
+4
+>>> tracks[0].name
+'Kick'
+>>> for track in tracks:
+...     print(track.name)
+...
+'Kick'
+'Snare'
+'Hi-hat'
+'Cymbal"
+classreapy.core.MIDIEditor(id)[source]
+Bases: reapy.core.window.window.Window
+
+active_note_row
+Active note row (between 0 and 127).
+
+Type:	int
+default_channel
+Default note channel (between 0 and 15).
+
+Type:	int
+default_length
+Default note length in MIDI ticks.
+
+Type:	int
+default_velocity
+Default note velocity (between 0 and 127).
+
+Type:	int
+is_scale_enabled
+Whether scale is enabled in editor.
+
+Type:	bool
+is_snap_enabled
+Whether snap is enabled in editor.
+
+Type:	bool
+last_clicked_cc_lane
+Last clicked CC lane.
+
+Type:	int
+last_clicked_cc_lane_name
+Last clicked CC lane name (“velocity”, “pitch”, etc.).
+
+Type:	str
+mode
+Mode of MIDI editor.
+
+Type:	{“piano roll”, “event list”}
+perform_action(action_id)[source]
+Perform action (from MIDI Editor section).
+
+Parameters:	action_id (int) – Action ID.
+scale_root
+Scale root (between 0 and 12, 0=C).
+
+Type:	int
+scale_type
+Scale type ID.
+
+Type:	str
+take
+Take currently edited.
+
+Type:	Take
+classreapy.core.ToolTip(message=' ', x=0, y=0, topmost=True, show=True)[source]
+Bases: reapy.core.window.window.Window
+
+Tooltip window.
+
+hide()[source]
+Hide tooltip.
+
+message
+Tooltip message.
+
+Note that tooltips with empty messages are always hidden.
+
+Type:	str
+refresh()[source]
+Refresh window.
+
+show()[source]
+Show tooltip.
+
+topmost
+Whether tooltip is displayed on top of all other windows.
+
+Type:	bool
+x
+x position.
+
+Type:	int
+y
+y position.
+
+Type:	int
+classreapy.core.Window(id)[source]
+Bases: reapy.core.reapy_object.ReapyObject
+
+refresh()[source]
+Refresh window.
+
+© Copyright 2020, Roméo Després Revision 389570e5.
+
+Built with Sphinx using a theme provided by Read the Docs.
+Read the Docs
+ latest
