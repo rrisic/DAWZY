@@ -1,0 +1,7 @@
+# REAPER Chatbot Dependencies
+# Core dependencies
+openai
+python-dotenv
+python-reapy
+# Additional useful packages for development
+requests
