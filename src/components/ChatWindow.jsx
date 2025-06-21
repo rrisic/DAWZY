@@ -1,4 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
+import VoiceButton from './VoiceButton'
+import RecordButton from './RecordButton'
+import AudioMessage from './AudioMessage'
 
 const ChatWindow = () => {
   const [messages, setMessages] = useState([
@@ -74,23 +77,23 @@ const ChatWindow = () => {
     autoResizeTextarea()
   }, [input])
 
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return
+  const sendMessage = async (messageText = null) => {
+    const textToSend = messageText || input.trim()
+    if (!textToSend || isLoading) return
 
-    const userMessage = input.trim()
     setInput('')
     setIsLoading(true)
 
     // Add user message
     setMessages(prev => [...prev, { 
       id: Date.now(), 
-      text: userMessage, 
+      text: textToSend, 
       sender: 'user' 
     }])
 
     try {
       // Send message to Python backend
-      const response = await window.musicAssistant.sendMessage(userMessage)
+      const response = await window.musicAssistant.sendMessage(textToSend)
       
       setMessages(prev => [...prev, response])
     } catch (error) {
@@ -110,6 +113,33 @@ const ChatWindow = () => {
     }
   }
 
+  const handleVoiceInput = (text) => {
+    sendMessage(text)
+  }
+
+  const handleAudioRecorded = (audioFile) => {
+    // Add audio message to chat
+    setMessages(prev => [...prev, {
+      id: Date.now(),
+      type: 'audio',
+      file: audioFile,
+      sender: 'user'
+    }])
+
+    // TODO: Send audio file to backend for MIDI conversion
+    // This will be implemented when the MIDI conversion service is ready
+    console.log('Audio file recorded:', audioFile)
+    
+    // For now, add a placeholder AI response
+    setTimeout(() => {
+      setMessages(prev => [...prev, {
+        id: Date.now() + 1,
+        text: 'I received your audio recording! This will be converted to MIDI and imported into Reaper once the conversion service is implemented.',
+        sender: 'ai'
+      }])
+    }, 1000)
+  }
+
   const handleInputChange = (e) => {
     setInput(e.target.value)
   }
@@ -121,10 +151,18 @@ const ChatWindow = () => {
     }
   }
 
+  const renderMessage = (message) => {
+    if (message.type === 'audio') {
+      return <AudioMessage file={message.file} sender={message.sender} />
+    }
+    
+    return message.text
+  }
+
   return (
-    <div className="flex flex-col h-screen bg-transparent">
+    <div className="flex flex-col h-full bg-transparent">
       {/* Chat Messages Area */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar px-6 pb-4 pt-6">
+      <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-4 min-h-0">
         <div className="flex flex-col space-y-4">
           {messages.map((message) => (
             <div
@@ -134,10 +172,10 @@ const ChatWindow = () => {
               {message.sender === 'user' ? (
                 <>
                   <div className="chat-bubble-icon">
-                    👤
+                    {message.type === 'audio' ? '🎵' : '👤'}
                   </div>
                   <div className="chat-bubble-content">
-                    {message.text}
+                    {renderMessage(message)}
                   </div>
                 </>
               ) : (
@@ -151,7 +189,7 @@ const ChatWindow = () => {
                     </div>
                   </div>
                   <div className="chat-bubble-content">
-                    {message.text}
+                    {renderMessage(message)}
                   </div>
                 </>
               )}
@@ -181,18 +219,30 @@ const ChatWindow = () => {
       </div>
       
       {/* Input Area - Fixed at bottom */}
-      <div className="p-6 pt-2" ref={inputContainerRef}>
+      <div className="flex-shrink-0 p-6 pt-2" ref={inputContainerRef}>
         <div className="input-container">
-          <textarea
-            ref={textareaRef}
-            className="custom-textarea"
-            value={input}
-            onChange={handleInputChange}
-            onKeyPress={handleKeyPress}
-            placeholder="Type your message here... (Press Enter to send)"
-            disabled={isLoading}
-            rows={1}
-          />
+          <div className="flex items-end gap-3">
+            <textarea
+              ref={textareaRef}
+              className="custom-textarea flex-1"
+              value={input}
+              onChange={handleInputChange}
+              onKeyPress={handleKeyPress}
+              placeholder="Type your message here... (Press Enter to send)"
+              disabled={isLoading}
+              rows={1}
+            />
+            <div className="flex items-center gap-2">
+              <VoiceButton 
+                onVoiceInput={handleVoiceInput}
+                disabled={isLoading}
+              />
+              <RecordButton 
+                onAudioRecorded={handleAudioRecorded}
+                disabled={isLoading}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </div>

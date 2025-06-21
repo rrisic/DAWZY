@@ -1,9 +1,11 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
+const fs = require('fs')
 const { spawn } = require('child_process')
 
 let mainWindow
 let pythonProcess = null
+let melodyCounter = 0
 
 // Disable GPU acceleration to prevent GPU process crashes
 app.disableHardwareAcceleration()
@@ -13,6 +15,17 @@ app.commandLine.appendSwitch('--disable-gpu-sandbox')
 app.commandLine.appendSwitch('--disable-software-rasterizer')
 app.commandLine.appendSwitch('--disable-dev-shm-usage')
 app.commandLine.appendSwitch('--no-sandbox')
+
+// Create recordings directory if it doesn't exist
+const recordingsDir = path.join(__dirname, 'recordings')
+if (!fs.existsSync(recordingsDir)) {
+  fs.mkdirSync(recordingsDir, { recursive: true })
+}
+
+// Reset melody counter on startup
+function resetMelodyCounter() {
+  melodyCounter = 0
+}
 
 function createWindow () {
   mainWindow = new BrowserWindow({
@@ -163,8 +176,33 @@ ipcMain.handle('get-backend-status', async () => {
   }
 })
 
+// Save audio file to recordings directory
+ipcMain.handle('save-audio-file', async (event, buffer, filename) => {
+  try {
+    // Increment counter and create sequential filename
+    melodyCounter++
+    const safeFilename = `Melody_${melodyCounter}.wav`
+    const filePath = path.join(recordingsDir, safeFilename)
+    
+    // Write the file
+    fs.writeFileSync(filePath, buffer)
+    
+    console.log(`Audio file saved: ${filePath}`)
+    
+    return {
+      success: true,
+      filePath: filePath,
+      filename: safeFilename
+    }
+  } catch (error) {
+    console.error('Error saving audio file:', error)
+    throw error
+  }
+})
+
 // App lifecycle
 app.whenReady().then(() => {
+  resetMelodyCounter()
   createWindow()
   startPythonBackend()
 })

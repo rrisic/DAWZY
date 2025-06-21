@@ -42,5 +42,28 @@ contextBridge.exposeInMainWorld('musicAssistant', {
   },
 
   // Get connection status
-  getConnectionStatus: () => ipcRenderer.invoke('get-backend-status')
+  getConnectionStatus: () => ipcRenderer.invoke('get-backend-status'),
+
+  // Save audio recording to local machine
+  saveAudioRecording: async (audioBlob, filename) => {
+    try {
+      console.log('Preload: Starting saveAudioRecording')
+      const arrayBuffer = await audioBlob.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+      console.log('Preload: Calling save-audio-file IPC')
+      const response = await ipcRenderer.invoke('save-audio-file', buffer, filename)
+      console.log('Preload: IPC response received:', response)
+      return {
+        success: true,
+        filePath: response.filePath,
+        filename: response.filename
+      }
+    } catch (error) {
+      console.error('Preload: Error in saveAudioRecording:', error)
+      return {
+        success: false,
+        error: error.message
+      }
+    }
+  }
 }) 

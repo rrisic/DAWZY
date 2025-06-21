@@ -201,6 +201,86 @@
     margin-left: 0;
     margin-top: 0;
   }
+
+  /* Audio Message Styles */
+  .audio-message-container {
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .audio-player {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.6) 0%, rgba(51, 65, 85, 0.4) 100%);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    border-radius: 12px;
+    padding: 12px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+  }
+
+  .audio-player:hover {
+    border-color: rgba(139, 92, 246, 0.5);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  }
+
+  .audio-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .audio-filename {
+    font-size: 14px;
+    font-weight: 500;
+    color: white;
+    margin-bottom: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .audio-controls {
+    width: 100%;
+  }
+
+  .custom-audio-controls {
+    width: 100%;
+    height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.6) 0%, rgba(51, 65, 85, 0.4) 100%);
+    border: 1px solid rgba(139, 92, 246, 0.2);
+  }
+
+  .custom-audio-controls::-webkit-media-controls-panel {
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.8) 0%, rgba(51, 65, 85, 0.6) 100%);
+  }
+
+  .custom-audio-controls::-webkit-media-controls-play-button {
+    background: linear-gradient(135deg, #8b5cf6, #a855f7);
+    border-radius: 50%;
+  }
+
+  .custom-audio-controls::-webkit-media-controls-timeline {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+  }
+
+  .custom-audio-controls::-webkit-media-controls-current-time-display,
+  .custom-audio-controls::-webkit-media-controls-time-remaining-display {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .audio-icon {
+    font-size: 20px;
+    opacity: 0.8;
+    transition: opacity 0.2s ease;
+  }
+
+  .audio-player:hover .audio-icon {
+    opacity: 1;
+  }
 }
 
 @keyframes fadeIn {
@@ -212,4 +292,41 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 300px;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes ping {
+  75%, 100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-ping {
+  animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
 } 
