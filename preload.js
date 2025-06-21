@@ -1,0 +1,46 @@
+const { contextBridge, ipcRenderer } = require('electron')
+
+// Expose a safe API for communicating with Python backend
+contextBridge.exposeInMainWorld('musicAssistant', {
+  // Send message to Python backend and get response
+  sendMessage: async (message) => {
+    try {
+      // Send message to main process, which will forward to Python backend
+      const response = await ipcRenderer.invoke('send-to-backend', message)
+      return {
+        sender: 'ai',
+        text: response.reply,
+        success: true
+      }
+    } catch (error) {
+      return {
+        sender: 'ai',
+        text: 'Sorry, I\'m having trouble connecting to my backend. Please try again.',
+        success: false,
+        error: error.message
+      }
+    }
+  },
+
+  // Future: Send voice data to Python backend
+  sendVoice: async (audioData) => {
+    try {
+      const response = await ipcRenderer.invoke('send-voice-to-backend', audioData)
+      return {
+        sender: 'ai',
+        text: response.reply,
+        success: true
+      }
+    } catch (error) {
+      return {
+        sender: 'ai',
+        text: 'Sorry, I couldn\'t process your voice input.',
+        success: false,
+        error: error.message
+      }
+    }
+  },
+
+  // Get connection status
+  getConnectionStatus: () => ipcRenderer.invoke('get-backend-status')
+}) 
