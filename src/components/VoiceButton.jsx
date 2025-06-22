@@ -8,8 +8,17 @@ const VoiceButton = ({ onVoiceInput, disabled = false }) => {
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      mediaRecorderRef.current = new MediaRecorder(stream)
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 16000,
+          channelCount: 1,
+        }
+      })
+      mediaRecorderRef.current = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      })
       audioChunksRef.current = []
 
       mediaRecorderRef.current.ondataavailable = event => {
@@ -17,10 +26,10 @@ const VoiceButton = ({ onVoiceInput, disabled = false }) => {
       }
 
       mediaRecorderRef.current.onstop = async () => {
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
         stream.getTracks().forEach(t => t.stop())
 
-        // Placeholder transcription (swap in VAPI/etc. here)
+        // Use OpenAI Whisper for transcription
         const text = await convertAudioToText(blob)
         onVoiceInput(text)
       }
@@ -41,12 +50,42 @@ const VoiceButton = ({ onVoiceInput, disabled = false }) => {
   }
 
   const convertAudioToText = async (audioBlob) => {
-    // TODO: replace with real model/VAPI call
-    return new Promise(resolve => {
-      setTimeout(() => {
-        resolve("🎤 (Transcribed text will appear here once VAPI is integrated.)")
-      }, 1000)
-    })
+    try {
+      // Convert blob to base64
+      const reader = new FileReader()
+      const base64Promise = new Promise((resolve) => {
+        reader.onload = () => {
+          const base64Audio = reader.result.split(',')[1] // Remove data URL prefix
+          resolve(base64Audio)
+        }
+      })
+      reader.readAsDataURL(audioBlob)
+      const base64Audio = await base64Promise
+
+      // Send to backend for transcription
+      const response = await fetch('http://localhost:5000/transcribe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          audio: base64Audio
+        })
+      })
+
+      const result = await response.json()
+
+      if (result.success && result.transcript) {
+        console.log('Transcribed text:', result.transcript)
+        return result.transcript
+      } else {
+        console.error('Transcription failed:', result.error)
+        return "Failed to transcribe audio. Please try again."
+      }
+    } catch (error) {
+      console.error('Error sending audio to backend:', error)
+      return "Failed to send audio for transcription. Please try again."
+    }
   }
 
   const handleClick = () => {
@@ -59,15 +98,11 @@ const VoiceButton = ({ onVoiceInput, disabled = false }) => {
       disabled={disabled}
       title={isRecording ? 'Stop voice recording' : 'Start voice-to-text'}
       className={`
-        relative flex items-center justify-center w-8 h-8 rounded-full
-        transition-transform hover:scale-110 focus:outline-none
-        ${isRecording
-          ? 'bg-gradient-to-r from-red-500 to-pink-500'
-          : 'bg-gradient-to-r from-purple-500 to-blue-500'}
-        ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
+        voice-play-button ${isRecording ? 'playing' : ''}
+        ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
       `}
     >
-      <span className="text-white">🎤</span>
+      {isRecording ? '⏹️' : '🎤'}
     </button>
   )
 }

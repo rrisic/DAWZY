@@ -2,35 +2,17 @@ import React, { useState, useEffect, useRef } from 'react'
 import VoiceButton from './VoiceButton'
 import RecordButton from './RecordButton'
 import AudioMessage from './AudioMessage'
+import AIVoiceResponse from './AIVoiceResponse'
 
 const ChatWindow = () => {
   const [messages, setMessages] = useState([
-    { id: 1, sender: 'ai', text: 'Hi! I\'m your music production assistant. How can I help you today?' }
+    { id: 1, sender: 'ai', text: 'Hi! I\'m DAWZY, your music production assistant. How can I help you today?' }
   ])
   const [input, setInput] = useState('')
-  const [isConnected, setIsConnected] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
   const inputContainerRef = useRef(null)
-
-  useEffect(() => {
-    // Check backend connection status
-    const checkConnection = async () => {
-      try {
-        const status = await window.musicAssistant.getConnectionStatus()
-        setIsConnected(status.connected)
-      } catch (error) {
-        console.error('Failed to check connection:', error)
-        setIsConnected(false)
-      }
-    }
-    
-    checkConnection()
-    const interval = setInterval(checkConnection, 5000) // Check every 5 seconds
-    
-    return () => clearInterval(interval)
-  }, [])
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -92,10 +74,35 @@ const ChatWindow = () => {
     }])
 
     try {
-      // Send message to Python backend
-      const response = await window.musicAssistant.sendMessage(textToSend)
-      
-      setMessages(prev => [...prev, response])
+      // Send message to Flask backend
+      const response = await fetch('http://localhost:5000/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: textToSend
+        })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setMessages(prev => [...prev, {
+          id: Date.now() + 1,
+          text: result.response,
+          audio: result.audio,
+          sender: 'ai',
+          success: true
+        }])
+      } else {
+        setMessages(prev => [...prev, {
+          id: Date.now() + 1,
+          text: `Error: ${result.error}`,
+          sender: 'ai',
+          success: false
+        }])
+      }
     } catch (error) {
       console.error('Failed to send message:', error)
       setMessages(prev => [...prev, {
@@ -154,6 +161,18 @@ const ChatWindow = () => {
   const renderMessage = (message) => {
     if (message.type === 'audio') {
       return <AudioMessage file={message.file} sender={message.sender} />
+    }
+    
+    // For AI messages with audio, use AIVoiceResponse
+    if (message.sender === 'ai' && message.audio) {
+      return (
+        <AIVoiceResponse 
+          text={message.text}
+          audioBase64={message.audio}
+          onPlayStart={() => console.log('AI voice started playing')}
+          onPlayEnd={() => console.log('AI voice finished playing')}
+        />
+      )
     }
     
     return message.text
@@ -221,10 +240,10 @@ const ChatWindow = () => {
       {/* Input Area - Fixed at bottom */}
       <div className="flex-shrink-0 p-6 pt-2" ref={inputContainerRef}>
         <div className="input-container">
-          <div className="flex items-end gap-3">
+          <div className="relative">
             <textarea
               ref={textareaRef}
-              className="custom-textarea flex-1"
+              className="custom-textarea pr-20 pb-12"
               value={input}
               onChange={handleInputChange}
               onKeyPress={handleKeyPress}
@@ -232,7 +251,7 @@ const ChatWindow = () => {
               disabled={isLoading}
               rows={1}
             />
-            <div className="flex items-center gap-2">
+            <div className="absolute bottom-3 right-3 flex items-center gap-2">
               <VoiceButton 
                 onVoiceInput={handleVoiceInput}
                 disabled={isLoading}

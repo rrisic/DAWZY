@@ -136,15 +136,11 @@ const RecordButton = ({ onAudioRecorded, disabled = false, maxDuration = 5 }) =>
       disabled={disabled}
       title={getTooltip()}
       className={`
-        relative flex items-center justify-center w-8 h-8 rounded-full
-        transition-transform hover:scale-110 focus:outline-none
-        ${isRecording
-          ? 'bg-gradient-to-r from-red-500 to-pink-500'
-          : 'bg-gradient-to-r from-blue-500 to-cyan-500'}
-        ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
+        voice-play-button record-button ${isRecording ? 'playing' : ''}
+        ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
       `}
     >
-      <span className="text-white">{getIcon()}</span>
+      {isRecording ? '⏹️' : '🔴'}
     </button>
   )
 }

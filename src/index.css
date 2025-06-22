@@ -51,6 +51,9 @@
     /* Hide scrollbar */
     scrollbar-width: none;
     -ms-overflow-style: none;
+    /* Ensure buttons don't overlap text */
+    padding-bottom: 60px;
+    padding-right: 100px;
   }
 
   .custom-textarea::-webkit-scrollbar {
@@ -98,6 +101,16 @@
       0 8px 32px rgba(0, 0, 0, 0.15),
       0 0 0 3px rgba(236, 72, 153, 0.1),
       inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+
+  /* Voice and Record buttons positioning */
+  .input-container .absolute {
+    z-index: 10;
+  }
+
+  .input-container button {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
   }
 }
 
@@ -308,12 +321,9 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
 }
 
 @keyframes ping {
@@ -329,4 +339,89 @@
 
 .animate-ping {
   animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* AI Voice Response Styles */
+.ai-voice-response {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ai-text {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.ai-voice-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.voice-play-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+}
+
+.voice-play-button:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.voice-play-button.playing {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  animation: pulse 1.5s infinite;
+}
+
+/* Record button styling with red theme */
+.voice-play-button.record-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.voice-play-button.record-button:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+.voice-play-button.record-button.playing {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  animation: pulse 1.5s infinite;
+}
+
+.loading-indicator,
+.error-indicator,
+.playing-indicator {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.loading-indicator {
+  color: #fbbf24;
+}
+
+.error-indicator {
+  color: #ef4444;
+}
+
+.playing-indicator {
+  color: white;
+  font-size: 14px;
+  font-weight: 500;
+  animation: fadeInOut 2s infinite;
+}
+
+@keyframes fadeInOut {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
 } 

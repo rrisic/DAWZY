@@ -1,101 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react'
 
-const VAPIVoiceButton = ({ onVoiceResponse, onError, disabled = false }) => {
+const VAPIVoiceButton = ({ onVoiceModeChange, onVoiceResponse, disabled = false }) => {
+  const [isVoiceMode, setIsVoiceMode] = useState(false)
   const [isRecording, setIsRecording] = useState(false)
-  const [isConnected, setIsConnected] = useState(false)
-  const [callId, setCallId] = useState(null)
   const [recordingTime, setRecordingTime] = useState(0)
   
-  const websocketRef = useRef(null)
   const mediaRecorderRef = useRef(null)
-  const audioContextRef = useRef(null)
   const timerRef = useRef(null)
   const streamRef = useRef(null)
-
-  useEffect(() => {
-    // Initialize WebSocket connection
-    connectWebSocket()
-    
-    return () => {
-      if (websocketRef.current) {
-        websocketRef.current.close()
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop())
-      }
-    }
-  }, [])
-
-  const connectWebSocket = () => {
-    try {
-      websocketRef.current = new WebSocket('ws://localhost:8765')
-      
-      websocketRef.current.onopen = () => {
-        console.log('WebSocket connected')
-        setIsConnected(true)
-      }
-      
-      websocketRef.current.onmessage = (event) => {
-        const data = JSON.parse(event.data)
-        handleWebSocketMessage(data)
-      }
-      
-      websocketRef.current.onclose = () => {
-        console.log('WebSocket disconnected')
-        setIsConnected(false)
-        setCallId(null)
-        // Try to reconnect after 3 seconds
-        setTimeout(() => {
-          if (!isRecording) {
-            connectWebSocket()
-          }
-        }, 3000)
-      }
-      
-      websocketRef.current.onerror = (error) => {
-        console.error('WebSocket error:', error)
-        setIsConnected(false)
-      }
-    } catch (error) {
-      console.error('Failed to connect WebSocket:', error)
-      setIsConnected(false)
-    }
-  }
-
-  const handleWebSocketMessage = (data) => {
-    switch (data.type) {
-      case 'call_started':
-        console.log('VAPI call started:', data.call_id)
-        setCallId(data.call_id)
-        break
-        
-      case 'call_ended':
-        console.log('VAPI call ended')
-        setCallId(null)
-        break
-        
-      case 'vapi_response':
-        console.log('VAPI response:', data.data)
-        if (data.data && data.data.transcript) {
-          onVoiceResponse(data.data.transcript)
-        }
-        break
-        
-      case 'call_error':
-        console.error('VAPI call error:', data.error)
-        setCallId(null)
-        if (onError) onError()
-        if (data.error && data.error.includes('not configured')) {
-          alert('VAPI is not configured. Please check your .env file in the backend directory.')
-        } else {
-          alert('Voice service error: ' + data.error)
-        }
-        break
-        
-      default:
-        console.log('Unknown WebSocket message:', data)
-    }
-  }
+  const audioChunksRef = useRef([])
 
   const startRecording = async () => {
     try {
@@ -110,44 +23,61 @@ const VAPIVoiceButton = ({ onVoiceResponse, onError, disabled = false }) => {
       })
       
       streamRef.current = stream
-      
-      // Create audio context for processing
-      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)()
+      audioChunksRef.current = []
       
       // Create media recorder
       mediaRecorderRef.current = new MediaRecorder(stream, {
         mimeType: 'audio/webm;codecs=opus'
       })
       
-      // Start VAPI call
-      if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-        websocketRef.current.send(JSON.stringify({
-          type: 'start_call'
-        }))
-      }
-      
       // Handle audio data
-      mediaRecorderRef.current.ondataavailable = async (event) => {
-        if (event.data.size > 0 && callId) {
-          // Convert to raw audio data
-          const arrayBuffer = await event.data.arrayBuffer()
-          const audioBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer)
-          
-          // Convert to 16-bit PCM
-          const pcmData = convertToPCM(audioBuffer)
-          
-          // Send to WebSocket
-          if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-            websocketRef.current.send(JSON.stringify({
-              type: 'audio_chunk',
-              audio: btoa(String.fromCharCode(...new Uint8Array(pcmData)))
-            }))
-          }
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
         }
       }
       
+      mediaRecorderRef.current.onstop = async () => {
+        // Create audio blob
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
+        
+        // Convert to base64 for sending to backend
+        const reader = new FileReader()
+        reader.onload = async () => {
+          const base64Audio = reader.result.split(',')[1] // Remove data URL prefix
+          
+          try {
+            // Send to backend for transcription
+            const response = await fetch('http://localhost:5000/transcribe', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                audio: base64Audio
+              })
+            })
+            
+            const result = await response.json()
+            
+            if (result.success && result.transcript) {
+              console.log('Transcribed text:', result.transcript)
+              onVoiceResponse(result.transcript)
+            } else {
+              console.error('Transcription failed:', result.error)
+              alert('Failed to transcribe audio. Please try again.')
+            }
+          } catch (error) {
+            console.error('Error sending audio to backend:', error)
+            alert('Failed to send audio for transcription. Please try again.')
+          }
+        }
+        
+        reader.readAsDataURL(audioBlob)
+      }
+      
       // Start recording
-      mediaRecorderRef.current.start(100) // Send chunks every 100ms
+      mediaRecorderRef.current.start(100) // Collect chunks every 100ms
       setIsRecording(true)
       setRecordingTime(0)
       
@@ -157,7 +87,6 @@ const VAPIVoiceButton = ({ onVoiceResponse, onError, disabled = false }) => {
       }, 1000)
       
     } catch (error) {
-      if (onError) onError()
       console.error('Error starting recording:', error)
       alert('Unable to access microphone. Please check permissions.')
     }
@@ -169,13 +98,6 @@ const VAPIVoiceButton = ({ onVoiceResponse, onError, disabled = false }) => {
       setIsRecording(false)
       clearInterval(timerRef.current)
       
-      // End VAPI call
-      if (websocketRef.current && websocketRef.current.readyState === WebSocket.OPEN) {
-        websocketRef.current.send(JSON.stringify({
-          type: 'end_call'
-        }))
-      }
-      
       // Stop microphone
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
@@ -185,61 +107,50 @@ const VAPIVoiceButton = ({ onVoiceResponse, onError, disabled = false }) => {
     }
   }
 
-  const convertToPCM = (audioBuffer) => {
-    const channelData = audioBuffer.getChannelData(0) // Mono
-    const pcmData = new Int16Array(channelData.length)
+  const toggleVoiceMode = () => {
+    const newMode = !isVoiceMode
+    setIsVoiceMode(newMode)
+    onVoiceModeChange(newMode)
     
-    for (let i = 0; i < channelData.length; i++) {
-      // Convert float32 to int16
-      const sample = Math.max(-1, Math.min(1, channelData[i]))
-      pcmData[i] = sample < 0 ? sample * 0x8000 : sample * 0x7FFF
-    }
-    
-    return pcmData.buffer
-  }
-
-  const handleClick = () => {
-    if (isRecording) {
-      stopRecording()
-    } else {
+    if (newMode) {
+      // Entering voice mode - start recording
       startRecording()
+    } else {
+      // Exiting voice mode - stop recording
+      stopRecording()
     }
   }
 
   const getIcon = () => {
-    if (!isConnected) return '🔴'
-    if (isRecording) return '⏹️'
+    if (isVoiceMode) return '⏹️'
     return '🎤'
   }
 
   const getTooltip = () => {
-    if (!isConnected) return 'Connecting to voice service...'
-    if (isRecording) return 'Recording... click to stop'
-    return 'Click to start voice conversation with VAPI'
+    if (isVoiceMode) return 'Voice mode active - click to stop'
+    return 'Click to start voice conversation'
   }
 
   return (
     <button
-      onClick={handleClick}
-      disabled={disabled || !isConnected}
+      onClick={toggleVoiceMode}
+      disabled={disabled}
       title={getTooltip()}
       className={`
         relative flex items-center justify-center w-8 h-8 rounded-full
         transition-transform hover:scale-110 focus:outline-none
-        ${isRecording
+        ${isVoiceMode
           ? 'bg-gradient-to-r from-red-500 to-pink-500'
-          : isConnected
-          ? 'bg-gradient-to-r from-green-500 to-emerald-500'
-          : 'bg-gradient-to-r from-gray-500 to-gray-600'}
-        ${disabled || !isConnected ? 'opacity-50 cursor-not-allowed' : ''}
+          : 'bg-gradient-to-r from-green-500 to-emerald-500'}
+        ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
       `}
     >
       <span className="text-white">{getIcon()}</span>
-      {isRecording && (
+      {isVoiceMode && (
         <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping"></div>
       )}
     </button>
   )
 }
 
-export default VAPIVoiceButton 
+export default VAPIVoiceButton
