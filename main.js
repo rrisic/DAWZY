@@ -20,6 +20,19 @@ app.commandLine.appendSwitch('--no-sandbox')
 const recordingsDir = path.join(__dirname, 'recordings')
 if (!fs.existsSync(recordingsDir)) {
   fs.mkdirSync(recordingsDir, { recursive: true })
+} else {
+  // Clear the recordings directory on startup
+  try {
+    const files = fs.readdirSync(recordingsDir)
+    for (const file of files) {
+      const filePath = path.join(recordingsDir, file)
+      fs.unlinkSync(filePath)
+      console.log(`Deleted old recording: ${filePath}`)
+    }
+    console.log('Recordings folder cleared on startup')
+  } catch (error) {
+    console.error('Error clearing recordings folder:', error)
+  }
 }
 
 // Reset melody counter on startup

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Music Production Assistant Backend
-Handles LLM processing and REAPER integration using reapy
+Handles LLM processing, VAPI integration, and REAPER integration using reapy
 """
 
 import json
@@ -9,15 +9,24 @@ import sys
 import logging
 import threading
 import time
+import asyncio
+import websockets
+import base64
+import io
 from datetime import datetime
 import random
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List
+import wave
+import tempfile
 
 # Load environment variables from .env file
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    # Load .env from the backend directory
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    env_path = os.path.join(backend_dir, '.env')
+    load_dotenv(env_path)
 except ImportError:
     print("Warning: python-dotenv not found. Install with: pip install python-dotenv")
 
@@ -27,6 +36,13 @@ try:
 except ImportError:
     print("Error: openai not found. Please install with: pip install openai")
     OpenAI = None
+
+# VAPI integration
+try:
+    import requests
+except ImportError:
+    print("Error: requests not found. Please install with: pip install requests")
+    requests = None
 
 # Import reapy instead of ReaScript API
 try:
@@ -42,12 +58,179 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+class VAPIClient:
+    """VAPI client for real-time voice processing"""
+    
+    def __init__(self):
+        self.api_key = os.getenv('VAPI_API_KEY')
+        self.base_url = "https://api.vapi.ai"
+        self.assistant_id = os.getenv('VAPI_ASSISTANT_ID')
+        
+        if not self.api_key:
+            logger.warning("VAPI API key not found in .env file")
+        else:
+            logger.info("VAPI API key found and configured")
+            
+        if not self.assistant_id:
+            logger.info("VAPI Assistant ID not found - will create temporary assistant")
+        else:
+            logger.info("VAPI Assistant ID found and configured")
+            
+    def create_call(self) -> Dict[str, Any]:
+        """Create a new VAPI call"""
+        if not self.api_key:
+            return {"error": "VAPI not configured"}
+            
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            # Build the request data
+            data = {
+                "assistant": {
+                    "model": {
+                        "provider": "openai",
+                        "model": "gpt-4",
+                        "temperature": 0.7,
+                        "systemPrompt": "You are a helpful REAPER assistant. You can help users with REAPER workflow questions, audio production advice, track management, effects and processing, automation, MIDI and audio editing. Be helpful, concise, and focus on REAPER-related topics."
+                    },
+                    "voice": {
+                        "provider": "11labs",
+                        "voiceId": "pNInz6obpgDQGcFmaJgB"  # Default voice
+                    },
+                    "firstMessage": "Hi! I'm your REAPER assistant. How can I help you today?"
+                }
+            }
+            
+            # Add assistantId if available
+            if self.assistant_id:
+                data["assistantId"] = self.assistant_id
+            
+            logger.info(f"Creating VAPI call with data: {data}")
+            
+            response = requests.post(f"{self.base_url}/call", headers=headers, json=data)
+            response.raise_for_status()
+            
+            return response.json()
+            
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"VAPI HTTP error: {e}")
+            logger.error(f"Response content: {e.response.text if e.response else 'No response'}")
+            return {"error": f"VAPI HTTP error: {e}"}
+        except Exception as e:
+            logger.error(f"Error creating VAPI call: {e}")
+            return {"error": str(e)}
+    
+    def stream_audio(self, call_id: str, audio_chunk: bytes) -> Dict[str, Any]:
+        """Stream audio chunk to VAPI"""
+        if not self.api_key:
+            return {"error": "VAPI not configured"}
+            
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "audio/wav"
+            }
+            
+            response = requests.post(
+                f"{self.base_url}/call/{call_id}/stream",
+                headers=headers,
+                data=audio_chunk
+            )
+            response.raise_for_status()
+            
+            return response.json()
+            
+        except Exception as e:
+            logger.error(f"Error streaming audio to VAPI: {e}")
+            return {"error": str(e)}
+    
+    def get_call_status(self, call_id: str) -> Dict[str, Any]:
+        """Get call status from VAPI"""
+        if not self.api_key:
+            return {"error": "VAPI not configured"}
+            
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}"
+            }
+            
+            response = requests.get(f"{self.base_url}/call/{call_id}", headers=headers)
+            response.raise_for_status()
+            
+            return response.json()
+            
+        except Exception as e:
+            logger.error(f"Error getting call status: {e}")
+            return {"error": str(e)}
+
+class AudioProcessor:
+    """Handle audio processing and buffering"""
+    
+    def __init__(self):
+        self.audio_buffer = []
+        self.sample_rate = 16000
+        self.channels = 1
+        self.sample_width = 2  # 16-bit
+        
+    def add_audio_chunk(self, audio_data: bytes):
+        """Add audio chunk to buffer"""
+        self.audio_buffer.append(audio_data)
+        
+    def get_buffered_audio(self) -> bytes:
+        """Get all buffered audio as single chunk"""
+        if not self.audio_buffer:
+            return b""
+        return b"".join(self.audio_buffer)
+        
+    def clear_buffer(self):
+        """Clear audio buffer"""
+        self.audio_buffer.clear()
+        
+    def create_wav_header(self, data_length: int) -> bytes:
+        """Create WAV header for audio data"""
+        header = bytearray(44)
+        
+        # RIFF header
+        header[0:4] = b'RIFF'
+        header[4:8] = (data_length + 36).to_bytes(4, 'little')
+        header[8:12] = b'WAVE'
+        
+        # fmt chunk
+        header[12:16] = b'fmt '
+        header[16:20] = (16).to_bytes(4, 'little')  # fmt chunk size
+        header[20:22] = (1).to_bytes(2, 'little')   # PCM format
+        header[22:24] = self.channels.to_bytes(2, 'little')
+        header[24:28] = self.sample_rate.to_bytes(4, 'little')
+        header[28:32] = (self.sample_rate * self.channels * self.sample_width).to_bytes(4, 'little')  # byte rate
+        header[32:34] = (self.channels * self.sample_width).to_bytes(2, 'little')  # block align
+        header[34:36] = (self.sample_width * 8).to_bytes(2, 'little')  # bits per sample
+        
+        # data chunk
+        header[36:40] = b'data'
+        header[40:44] = data_length.to_bytes(4, 'little')
+        
+        return bytes(header)
+        
+    def create_wav_file(self, audio_data: bytes) -> bytes:
+        """Create complete WAV file from audio data"""
+        header = self.create_wav_header(len(audio_data))
+        return header + audio_data
+
 class MusicAssistantBackend:
     def __init__(self):
         self.llm_initialized = False
         self.reaper_connected = False
         self.chat_history = []
         self.track_counter = 1
+        
+        # VAPI and audio processing
+        self.vapi_client = VAPIClient()
+        self.audio_processor = AudioProcessor()
+        self.active_calls = {}  # Track active VAPI calls
+        self.websocket_server = None
         
         # OpenAI configuration
         self.openai_client = None
@@ -307,6 +490,71 @@ Be helpful, concise, and focus on REAPER-related topics."""
             logger.error(f"Error executing REAPER action: {e}")
             return False
 
+    async def start_websocket_server(self, port=8765):
+        """Start WebSocket server for real-time audio streaming"""
+        try:
+            # Create a handler function that matches the expected signature
+            async def handler(websocket):
+                await self.handle_websocket_connection(websocket, "/")
+            
+            self.websocket_server = await websockets.serve(handler, "localhost", port)
+            logger.info(f"WebSocket server started on port {port}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to start WebSocket server: {e}")
+            return False
+    
+    async def handle_websocket_connection(self, websocket, path):
+        """Handle WebSocket connections from frontend"""
+        client_id = id(websocket)
+        logger.info(f"New WebSocket connection: {client_id}")
+        
+        try:
+            async for message in websocket:
+                try:
+                    data = json.loads(message)
+                    message_type = data.get('type')
+                    
+                    if message_type == 'start_call':
+                        # VAPI functionality removed - send placeholder response
+                        await websocket.send(json.dumps({
+                            'type': 'call_error',
+                            'error': 'VAPI functionality has been removed'
+                        }))
+                    
+                    elif message_type == 'audio_chunk':
+                        # VAPI functionality removed - ignore audio chunks
+                        pass
+                    
+                    elif message_type == 'end_call':
+                        # VAPI functionality removed - send placeholder response
+                        await websocket.send(json.dumps({
+                            'type': 'call_ended',
+                            'success': True
+                        }))
+                    
+                    elif message_type == 'text_message':
+                        # Handle text message (existing functionality)
+                        response = self.process_message(data.get('content', ''))
+                        await websocket.send(json.dumps(response))
+                        
+                except json.JSONDecodeError as e:
+                    logger.error(f"Invalid JSON from WebSocket: {e}")
+                    await websocket.send(json.dumps({
+                        'type': 'error',
+                        'error': 'Invalid JSON format'
+                    }))
+                    
+        except websockets.exceptions.ConnectionClosed:
+            logger.info(f"WebSocket connection closed: {client_id}")
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}")
+        finally:
+            # Clean up if connection is lost
+            if client_id in self.active_calls:
+                del self.active_calls[client_id]
+                self.audio_processor.clear_buffer()
+
 def main():
     """Main backend process"""
     backend = MusicAssistantBackend()
@@ -317,7 +565,19 @@ def main():
     backend.initialize_llm()
     backend.connect_to_reaper()
     
+    # Start WebSocket server in a separate thread
+    async def run_websocket_server():
+        await backend.start_websocket_server()
+        await asyncio.Future()  # Keep running
+    
+    def start_websocket():
+        asyncio.run(run_websocket_server())
+    
+    websocket_thread = threading.Thread(target=start_websocket, daemon=True)
+    websocket_thread.start()
+    
     logger.info("Backend ready, listening for messages...")
+    logger.info("WebSocket server starting on port 8765...")
     
     try:
         while True:
