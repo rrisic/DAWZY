@@ -115,6 +115,100 @@ class ReaperController:
                     "type": "object",
                     "properties": {}
                 }
+            },
+            {
+                "name": "list_fx_on_track",
+                "description": "List all FX plugins on a specific track",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "track_identifier": {
+                            "type": "string",
+                            "description": "Track name or index"
+                        }
+                    },
+                    "required": ["track_identifier"]
+                }
+            },
+            {
+                "name": "inspect_fx_parameters",
+                "description": "Inspect all parameters of a specific FX on a track",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "track_identifier": {
+                            "type": "string",
+                            "description": "Track name or index"
+                        },
+                        "fx_index": {
+                            "type": "integer",
+                            "description": "Index of the FX to inspect (0-based)"
+                        }
+                    },
+                    "required": ["track_identifier", "fx_index"]
+                }
+            },
+            {
+                "name": "set_fx_parameter",
+                "description": "Set a specific parameter value for an FX. IMPORTANT: Always inspect FX parameters first to find the correct parameter index before setting values.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "track_identifier": {
+                            "type": "string",
+                            "description": "Track name or index"
+                        },
+                        "fx_index": {
+                            "type": "integer",
+                            "description": "Index of the FX (0-based)"
+                        },
+                        "param_index": {
+                            "type": "integer",
+                            "description": "Index of the parameter (0-based) - use inspect_fx_parameters first to find the correct index"
+                        },
+                        "value": {
+                            "type": "number",
+                            "description": "Parameter value - can be either raw parameter value (0.0-1.0) OR human-readable formatted value (e.g., 3000 for 3000ms)"
+                        },
+                        "use_formatted": {
+                            "type": "boolean",
+                            "description": "If true, treat 'value' as a formatted/human-readable value that needs conversion to parameter range. If false, use raw parameter value.",
+                            "default": True
+                        }
+                    },
+                    "required": ["track_identifier", "fx_index", "param_index", "value"]
+                }
+            },
+            {
+                "name": "modify_fx_parameter",
+                "description": "Modify an FX parameter by multiplying current value or setting absolute value. IMPORTANT: Always inspect FX parameters first to find the correct parameter index.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "track_identifier": {
+                            "type": "string",
+                            "description": "Track name or index"
+                        },
+                        "fx_index": {
+                            "type": "integer",
+                            "description": "Index of the FX (0-based)"
+                        },
+                        "param_index": {
+                            "type": "integer",
+                            "description": "Index of the parameter (0-based)"
+                        },
+                        "operation": {
+                            "type": "string",
+                            "enum": ["multiply", "set"],
+                            "description": "Operation to perform: 'multiply' to multiply current value, 'set' to set absolute value"
+                        },
+                        "value": {
+                            "type": "number",
+                            "description": "For 'multiply': factor to multiply by (e.g., 1.5). For 'set': absolute value to set (0.0 to 1.0)"
+                        }
+                    },
+                    "required": ["track_identifier", "fx_index", "param_index", "operation", "value"]
+                }
             }
             
         ]
@@ -144,7 +238,7 @@ class ReaperController:
         try:
             new_track = project.add_track(name=track_name)
             logger.info(f"Created track: {track_name}")
-            return f"Successfully created track: '{track_name}' (ID: {new_track.id})"
+            return f"Successfully created track: '{track_name}'"
         except Exception as e:
             return f"Error creating track: {str(e)}"
     
@@ -247,6 +341,285 @@ class ReaperController:
         except Exception as e:
             return f"Error listing tracks: {str(e)}"
     
+    def list_fx_on_track(self, track_identifier: str) -> str:
+        """List all FX plugins on a specific track"""
+        if not project:
+            return "Error: Not connected to REAPER"
+        
+        try:
+            # Find track
+            track = self._find_track(track_identifier)
+            if not track:
+                return f"Track '{track_identifier}' not found"
+            
+            if not track.fxs:
+                return f"No FX found on track '{track.name}'"
+            
+            fx_list = []
+            fx_list.append(f"FX on track '{track.name}':")
+            fx_list.append("-" * 40)
+            
+            for i, fx in enumerate(track.fxs):
+                param_count = len(fx.params) if hasattr(fx, 'params') else 0
+                fx_info = f"{i}: {fx.name} ({param_count} parameters)"
+                fx_list.append(fx_info)
+            
+            return "\n".join(fx_list)
+            
+        except Exception as e:
+            return f"Error listing FX: {str(e)}"
+    
+    def inspect_fx_parameters(self, track_identifier: str, fx_index: int) -> str:
+        """Inspect all parameters of a specific FX on a track"""
+        if not project:
+            return "Error: Not connected to REAPER"
+        
+        try:
+            # Find track
+            track = self._find_track(track_identifier)
+            if not track:
+                return f"Track '{track_identifier}' not found"
+            
+            # Check if FX index is valid
+            if fx_index < 0 or fx_index >= len(track.fxs):
+                return f"FX index {fx_index} is out of range (0-{len(track.fxs)-1})"
+            
+            fx = track.fxs[fx_index]
+            
+            # Build detailed parameter information
+            result = []
+            result.append(f"FX: {fx.name}")
+            result.append(f"Track: {track.name}")
+            result.append(f"Number of parameters: {len(fx.params)}")
+            result.append("-" * 50)
+            
+            for i, param in enumerate(fx.params):
+                param_info = [f"Param {i}: {param.name} = {param:.3f}"]
+                
+                # Try to get formatted value if supported
+                try:
+                    formatted_value = param.formatted
+                    param_info.append(f"  Formatted: {formatted_value}")
+                except:
+                    param_info.append(f"  Formatted: Not available")
+                
+                # Try to get normalized value
+                try:
+                    normalized_value = param.normalized
+                    param_info.append(f"  Normalized: {normalized_value:.3f}")
+                except:
+                    param_info.append(f"  Normalized: Not available")
+                
+                # Try to get min/max values
+                try:
+                    min_val = param.min
+                    max_val = param.max
+                    param_info.append(f"  Range: {min_val:.3f} to {max_val:.3f}")
+                except:
+                    param_info.append(f"  Range: Not available")
+                
+                result.extend(param_info)
+                result.append("")  # Empty line for readability
+            
+            return "\n".join(result)
+            
+        except Exception as e:
+            return f"Error inspecting FX parameters: {str(e)}"
+    
+    def set_fx_parameter(self, track_identifier: str, fx_index: int, param_index: int, value: float, use_formatted: bool = True) -> str:
+        """Set a specific parameter value for an FX"""
+        if not project:
+            return "Error: Not connected to REAPER"
+        
+        try:
+            # Find track
+            track = self._find_track(track_identifier)
+            if not track:
+                return f"Track '{track_identifier}' not found"
+            
+            # Check if FX index is valid
+            if fx_index < 0 or fx_index >= len(track.fxs):
+                return f"FX index {fx_index} is out of range (0-{len(track.fxs)-1})"
+            
+            fx = track.fxs[fx_index]
+            logger.info(f"Found FX: {fx.name}, type: {type(fx)}")
+            
+            # Check if parameter index is valid
+            if param_index < 0 or param_index >= len(fx.params):
+                return f"Parameter index {param_index} is out of range (0-{len(fx.params)-1})"
+            
+            param = fx.params[param_index]
+            logger.info(f"Found param: {param.name}, type: {type(param)}")
+            
+            old_value = float(param)
+            logger.info(f"Got old value: {old_value}")
+            
+            # Convert formatted value to parameter value if needed
+            if use_formatted:
+                converted_value = self._convert_formatted_to_param_value(param, value)
+                logger.info(f"Converted formatted value {value} to parameter value {converted_value}")
+                actual_value_to_set = converted_value
+            else:
+                actual_value_to_set = value
+            
+            logger.info(f"Setting parameter value to: {actual_value_to_set}")
+            
+            # Set parameter directly using fx.params[index] = value (this works!)
+            fx.params[param_index] = actual_value_to_set
+            logger.info("Successfully set parameter using fx.params[index] assignment")
+            
+            new_value = float(param)
+            logger.info(f"Got new value: {new_value}")
+            
+            logger.info(f"Set {fx.name} param {param_index} ({param.name}) from {old_value:.3f} to {new_value:.3f}")
+            
+            # Show both formatted and actual values in response
+            try:
+                new_formatted = param.formatted
+                if use_formatted:
+                    return f"Successfully set parameter '{param.name}' on '{fx.name}' to {new_formatted} (target: {value}, actual param: {new_value:.3f})"
+                else:
+                    return f"Successfully set parameter '{param.name}' on '{fx.name}' to {new_value:.3f} (formatted: {new_formatted})"
+            except:
+                return f"Successfully set parameter '{param.name}' on '{fx.name}' to {new_value:.3f}"
+            
+        except Exception as e:
+            logger.error(f"Error in set_fx_parameter: {e}")
+            logger.error(f"Track: {track_identifier}, FX: {fx_index}, Param: {param_index}, Value: {value}")
+            return f"Error setting FX parameter: {str(e)}"
+    
+    def modify_fx_parameter(self, track_identifier: str, fx_index: int, param_index: int, operation: str, value: float) -> str:
+        """Modify an FX parameter by multiplying current value or setting absolute value"""
+        if not project:
+            return "Error: Not connected to REAPER"
+        
+        try:
+            # Find track
+            track = self._find_track(track_identifier)
+            if not track:
+                return f"Track '{track_identifier}' not found"
+            
+            # Check if FX index is valid
+            if fx_index < 0 or fx_index >= len(track.fxs):
+                return f"FX index {fx_index} is out of range (0-{len(track.fxs)-1})"
+            
+            fx = track.fxs[fx_index]
+            logger.info(f"Modify FX: {fx.name}, type: {type(fx)}")
+            
+            # Check if parameter index is valid
+            if param_index < 0 or param_index >= len(fx.params):
+                return f"Parameter index {param_index} is out of range (0-{len(fx.params)-1})"
+            
+            param = fx.params[param_index]
+            logger.info(f"Modify param: {param.name}, type: {type(param)}")
+            
+            current_value = float(param)
+            logger.info(f"Current value: {current_value}")
+            
+            if operation == "multiply":
+                # Multiply current value by the factor
+                new_value = current_value * value
+                logger.info(f"Calculated new value: {new_value}")
+                
+                # Set parameter directly using fx.params[index] = value
+                fx.params[param_index] = new_value
+                logger.info("Successfully set parameter using fx.params[index] assignment")
+                
+                actual_new_value = float(param)
+                
+                logger.info(f"Multiplied {fx.name} param {param_index} ({param.name}) by {value:.3f}: {current_value:.3f} -> {actual_new_value:.3f}")
+                return f"Successfully multiplied parameter '{param.name}' on '{fx.name}' by {value:.3f} (new value: {actual_new_value:.3f})"
+                
+            elif operation == "set":
+                # Set parameter directly using fx.params[index] = value
+                fx.params[param_index] = value
+                logger.info("Successfully set parameter using fx.params[index] assignment")
+                
+                actual_new_value = float(param)
+                 
+                logger.info(f"Set {fx.name} param {param_index} ({param.name}) from {current_value:.3f} to {actual_new_value:.3f}")
+                return f"Successfully set parameter '{param.name}' on '{fx.name}' to {value:.3f}"
+                
+            else:
+                return f"Invalid operation '{operation}'. Use 'multiply' or 'set'"
+            
+        except Exception as e:
+            logger.error(f"Error in modify_fx_parameter: {e}")
+            logger.error(f"Track: {track_identifier}, FX: {fx_index}, Param: {param_index}, Operation: {operation}, Value: {value}")
+            return f"Error modifying FX parameter: {str(e)}"
+    
+    def _convert_formatted_to_param_value(self, param, target_formatted_value: float) -> float:
+        """Convert a formatted value (like 3000ms) to the actual parameter value (like 0.2)"""
+        try:
+            # Get current parameter value and its formatted representation
+            current_param_value = float(param)
+            current_formatted_value = float(param.formatted)
+            
+            logger.info(f"Current: param={current_param_value:.6f}, formatted={current_formatted_value}")
+            
+            # Calculate the ratio/scaling factor
+            if current_formatted_value != 0:
+                # Linear scaling: new_param = current_param * (target_formatted / current_formatted)
+                scaling_factor = target_formatted_value / current_formatted_value
+                new_param_value = current_param_value * scaling_factor
+                
+                # Clamp to reasonable range (0.0 to 1.0 for most parameters)
+                new_param_value = max(0.0, min(1.0, new_param_value))
+                
+                logger.info(f"Scaling factor: {scaling_factor:.6f}, new param value: {new_param_value:.6f}")
+                return new_param_value
+            else:
+                # If current formatted is 0, we need to find the relationship differently
+                # Try setting a test value to understand the scaling
+                return self._find_param_value_by_testing(param, target_formatted_value)
+                
+        except Exception as e:
+            logger.error(f"Error converting formatted value: {e}")
+            # Fallback: assume direct mapping
+            return target_formatted_value / 1000.0  # Common case: ms to 0-1 range
+    
+    def _find_param_value_by_testing(self, param, target_formatted_value: float) -> float:
+        """Find parameter value by testing different values to match formatted output"""
+        try:
+            original_value = float(param)
+            
+            # Test a few values to understand the relationship
+            test_values = [0.1, 0.2, 0.5, 0.8]
+            best_match = 0.1
+            best_diff = float('inf')
+            
+            for test_val in test_values:
+                # Temporarily set the parameter
+                param.parent_fx.params[param.index] = test_val
+                test_formatted = float(param.formatted)
+                
+                # Calculate how close this is to our target
+                diff = abs(test_formatted - target_formatted_value)
+                if diff < best_diff:
+                    best_diff = diff
+                    best_match = test_val
+            
+            # Restore original value
+            param.parent_fx.params[param.index] = original_value
+            
+            # Use linear interpolation to get closer
+            if best_diff > 0:
+                # Try to interpolate for better accuracy
+                param.parent_fx.params[param.index] = best_match
+                current_formatted = float(param.formatted)
+                if current_formatted != 0:
+                    refined_value = best_match * (target_formatted_value / current_formatted)
+                    refined_value = max(0.0, min(1.0, refined_value))
+                    param.parent_fx.params[param.index] = original_value  # Restore
+                    return refined_value
+            
+            param.parent_fx.params[param.index] = original_value  # Restore
+            return best_match
+            
+        except Exception as e:
+            logger.error(f"Error in testing method: {e}")
+            return target_formatted_value / 1000.0  # Fallback
+    
     def _find_track(self, track_identifier: str):
         """Helper method to find track by name or index"""
         # Search by name first
@@ -276,6 +649,26 @@ class ReaperController:
             return self.remove_fx_from_track(arguments["track_identifier"], arguments["fx_index"])
         elif tool_name == "list_tracks":
             return self.list_tracks()
+        elif tool_name == "list_fx_on_track":
+            return self.list_fx_on_track(arguments["track_identifier"])
+        elif tool_name == "inspect_fx_parameters":
+            return self.inspect_fx_parameters(arguments["track_identifier"], arguments["fx_index"])
+        elif tool_name == "set_fx_parameter":
+            return self.set_fx_parameter(
+                arguments["track_identifier"], 
+                arguments["fx_index"], 
+                arguments["param_index"], 
+                arguments["value"],
+                arguments.get("use_formatted", False)
+            )
+        elif tool_name == "modify_fx_parameter":
+            return self.modify_fx_parameter(
+                arguments["track_identifier"], 
+                arguments["fx_index"], 
+                arguments["param_index"], 
+                arguments["operation"],
+                arguments["value"]
+            )
         else:
             return f"Unknown tool: {tool_name}"
     
@@ -389,13 +782,26 @@ class ReaperController:
                 
                 # Check if Claude wants to use tools
                 tool_calls = [content for content in response.content if content.type == "tool_use"]
+                text_content = [content for content in response.content if content.type == "text"]
+                
+                logger.info(f"Round {round_count}: Found {len(tool_calls)} tool calls, {len(text_content)} text responses")
                 
                 if not tool_calls:
                     # No more tools to call, add final text response
-                    for content in response.content:
-                        if content.type == "text":
-                            results.append(content.text)
+                    logger.info(f"No more tool calls - stopping at round {round_count}")
+                    for content in text_content:
+                        results.append(content.text)
                     break
+                else:
+                    # Log what tools Claude wants to call
+                    tool_names = [tc.name for tc in tool_calls]
+                    logger.info(f"Claude wants to call tools: {tool_names}")
+                    
+                    # Also log any text content in this round
+                    if text_content:
+                        for content in text_content:
+                            logger.info(f"Claude text in round {round_count}: {content.text[:100]}...")
+                            results.append(f"Round {round_count} text: {content.text}")
                 
                 # Execute tools and prepare results
                 tool_results = []
@@ -440,10 +846,12 @@ def main():
     print("- Add FX: 'Add ReaSynth to the Bass track'")
     print("- Remove FX: 'Remove FX at index 0 from Bass track'")
     print("- List tracks: 'Show me all tracks'")
+    print("- List FX: 'Show me all FX on the Bass track'")
+    print("- Inspect FX: 'Show me all parameters of FX 0 on track Bass'")
+    print("- Set parameter: 'Set parameter 2 of FX 0 on Bass track to 0.75'")
+    print("- Multiply parameter: 'Multiply parameter 6 of FX 0 on Bass track by 1.5'")
     print("- Complex chaining: 'Create 3 tracks named Drums, Bass, Guitar and add ReaSynth to each'")
-    print("\nModes:")
-    print("- Type 'chain:' before your command for multi-round tool calling")
-    print("- Type 'simple:' or just enter command for single-round tool calling")
+    print("\nThe system automatically detects when chaining is needed!")
     print("Type 'quit' to exit\n")
     
     while True:
@@ -453,14 +861,16 @@ def main():
                 break
             
             if user_input:
-                if user_input.startswith('chain:'):
-                    query = user_input[6:].strip()
-                    result = controller.process_query_with_chaining(query)
-                    print(f"Chained Result: {result}\n")
-                elif user_input.startswith('simple:'):
-                    query = user_input[7:].strip()
-                    result = controller.process_query(query)
-                    print(f"Simple Result: {result}\n")
+                # Auto-detect if chaining might be needed
+                if any(keyword in user_input.lower() for keyword in [
+                    'all parameters', 'then', 'and then', 'after that', 'next', 
+                    'show me all', 'list all', 'inspect all', 'parameters of',
+                    'create', 'add', 'delete', 'remove', 'set parameter',
+                    'change', 'modify', 'adjust', 'decay', 'attack', 'release',
+                    'volume', 'sustain', 'cutoff', 'resonance', 'to be', 'make it'
+                ]):
+                    result = controller.process_query_with_chaining(user_input)
+                    print(f"Result: {result}\n")
                 else:
                     result = controller.process_query(user_input)
                     print(f"Result: {result}\n")
