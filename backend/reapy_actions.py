@@ -1156,7 +1156,7 @@ class ReaperController:
             logger.error(f"Error executing tool {tool_name}: {e}")
             return f"Error executing tool {tool_name}: {str(e)}"
     
-    def process_query_with_chaining(self, user_query: str, max_rounds: int = 10) -> str:
+    def process_query_with_chaining(self, user_query: str, conversation_history: List[Dict[str, str]] = None, max_rounds: int = 10) -> str:
         """Process user query with multi-round tool calling support"""
         if not self.client:
             return "Error: Claude API not configured"
@@ -1165,17 +1165,37 @@ class ReaperController:
             # Always get current track context first
             track_context = self.list_tracks()
             
-            # Provide context to Claude upfront
+            # Build conversation context including history
+            messages = []
+            
+            # Define system prompt for Claude (will be passed as separate parameter)
+            system_prompt = """You are DAWZY, a REAPER DAW assistant with tool-calling capabilities. You can directly control REAPER through function calls.
+
+Your capabilities include:
+- Track management (add, delete, list tracks)
+- FX management (add, remove, list, configure effects)
+- MIDI operations (add notes, transpose, manage MIDI items)
+- Parameter control (inspect and modify FX parameters)
+
+Always provide helpful, clear explanations of what you're doing and what the user can expect. When operations are complete, give a nice summary of what was accomplished."""
+            
+            # Add conversation history if provided (last few exchanges for context)
+            if conversation_history:
+                # Only include the last 6 messages (3 exchanges) to avoid token limits
+                recent_history = conversation_history[-6:] if len(conversation_history) > 6 else conversation_history
+                for msg in recent_history:
+                    messages.append(msg)
+            
+            # Add current REAPER state and user request
             context_message = f"Current REAPER project state:\n{track_context}\n\nUser request: {user_query}"
+            messages.append({
+                "role": "user",
+                "content": context_message
+            })
             
-            messages = [
-                {
-                    "role": "user",
-                    "content": context_message
-                }
-            ]
-            
-            results = []
+            # Separate debug information from user-facing results
+            debug_results = []  # For logging/debugging
+            final_response = ""  # Only the final user-friendly text
             round_count = 0
             
             while round_count < max_rounds:
@@ -1186,6 +1206,7 @@ class ReaperController:
                 response = self.client.messages.create(
                     model="claude-sonnet-4-20250514",
                     max_tokens=1000,
+                    system=system_prompt,
                     tools=self.tools,
                     messages=messages
                 )
@@ -1200,21 +1221,22 @@ class ReaperController:
                 logger.info(f"Round {round_count}: Found {len(tool_calls)} tool calls, {len(text_content)} text responses")
                 
                 if not tool_calls:
-                    # No more tools to call, add final text response
+                    # No more tools to call, capture final text response
                     logger.info(f"No more tool calls - stopping at round {round_count}")
                     for content in text_content:
-                        results.append(content.text)
+                        final_response = content.text  # This is the final user-friendly summary
+                        logger.info(f"Final response captured: {final_response[:100]}...")
                     break
                 else:
                     # Log what tools Claude wants to call
                     tool_names = [tc.name for tc in tool_calls]
                     logger.info(f"Claude wants to call tools: {tool_names}")
                     
-                    # Also log any text content in this round
+                    # Log any text content in this round (but don't include in final response)
                     if text_content:
                         for content in text_content:
                             logger.info(f"Claude text in round {round_count}: {content.text[:100]}...")
-                            results.append(f"Round {round_count} text: {content.text}")
+                            debug_results.append(f"Round {round_count} text: {content.text}")
                 
                 # Execute tools and prepare results
                 tool_results = []
@@ -1225,7 +1247,11 @@ class ReaperController:
                     
                     # Execute the tool
                     result = self.execute_tool(tool_name, tool_args)
-                    results.append(f"Round {round_count} - {tool_name}: {result}")
+                    
+                    # Log debug information but don't include in final response
+                    debug_info = f"Round {round_count} - {tool_name}: {result}"
+                    debug_results.append(debug_info)
+                    logger.info(debug_info)
                     
                     tool_results.append({
                         "type": "tool_result",
@@ -1240,9 +1266,19 @@ class ReaperController:
                 })
             
             if round_count >= max_rounds:
-                results.append(f"Reached maximum rounds ({max_rounds}). Stopping here.")
+                error_msg = f"Reached maximum rounds ({max_rounds}). Stopping here."
+                logger.warning(error_msg)
+                if not final_response:
+                    final_response = error_msg
             
-            return "\n".join(results)
+            # Log all debug information for development purposes
+            if debug_results:
+                logger.info("Debug information from all rounds:")
+                for debug_line in debug_results:
+                    logger.info(debug_line)
+            
+            # Return only the final user-friendly response
+            return final_response if final_response else "Operation completed, but no summary was provided."
             
         except Exception as e:
             logger.error(f"Error in chained processing: {e}")

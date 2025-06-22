@@ -7,19 +7,13 @@ Handles LLM processing, OpenAI Whisper transcription, and REAPER integration usi
 import json
 import sys
 import logging
-import threading
-import time
-import asyncio
-import websockets
 import base64
-import io
-from datetime import datetime
-import random
-import os
-from typing import Dict, Any, List
-import wave
 import tempfile
-import numpy as np
+import os
+import time
+import re
+from datetime import datetime
+from typing import Optional, List
 
 # Load environment variables from .env file
 try:
@@ -39,8 +33,19 @@ except ImportError:
     print("Error: openai not found. Please install with: pip install openai")
     OpenAI = None
 
-# Beatoven.ai for music generation
-import requests
+# Pydantic for structured data
+try:
+    from pydantic import BaseModel, Field
+except ImportError:
+    print("Error: pydantic not found. Please install with: pip install pydantic")
+    BaseModel = None
+
+# Requests for Beatoven.ai API
+try:
+    import requests
+except ImportError:
+    print("Error: requests not found. Please install with: pip install requests")
+    requests = None
 
 # Flask for HTTP endpoints
 try:
@@ -83,6 +88,126 @@ CORS(app)  # Enable CORS for all routes
 # Global conversation history (in production, you'd want to store this per user/session)
 conversation_history = []
 MAX_HISTORY = 10  # Keep last 10 messages for context
+
+# Pydantic model for structured music generation
+if BaseModel:
+    class MusicGenerationRequest(BaseModel):
+        """Structured model for Beatoven.ai music generation parameters"""
+        genre: Optional[str] = Field(default="electronic", description="Music genre (e.g., electronic, ambient, rock, jazz)")
+        tempo: Optional[int] = Field(default=120, description="BPM (beats per minute), typically 60-200")
+        mood: Optional[str] = Field(default="energetic", description="Mood/emotion (e.g., happy, sad, energetic, calm, dark)")
+        duration: Optional[int] = Field(default=30, description="Duration in seconds, typically 15-120")
+        instruments: Optional[List[str]] = Field(default=["drums", "bass", "synth"], description="List of instruments to include")
+        key: Optional[str] = Field(default="C major", description="Musical key (e.g., C major, A minor, D major)")
+        intensity: Optional[str] = Field(default="medium", description="Intensity level (low, medium, high)")
+        style_descriptors: Optional[List[str]] = Field(default=[], description="Additional style descriptors")
+        exclude_instruments: Optional[List[str]] = Field(default=[], description="Instruments to specifically exclude")
+        
+        def to_beatoven_prompt(self) -> str:
+            """Convert structured parameters to Beatoven.ai prompt"""
+            prompt_parts = []
+            
+            # Base description
+            prompt_parts.append(f"Create a {self.mood} {self.genre} track")
+            
+            # Tempo
+            if self.tempo:
+                prompt_parts.append(f"at {self.tempo} BPM")
+            
+            # Duration
+            if self.duration:
+                prompt_parts.append(f"lasting {self.duration} seconds")
+            
+            # Instruments to include
+            if self.instruments:
+                instruments_str = ", ".join(self.instruments)
+                prompt_parts.append(f"featuring {instruments_str}")
+            
+            # Instruments to exclude
+            if self.exclude_instruments:
+                exclude_str = ", ".join(self.exclude_instruments)
+                prompt_parts.append(f"without {exclude_str}")
+            
+            # Musical key
+            if self.key and self.key != "C major":
+                prompt_parts.append(f"in {self.key}")
+            
+            # Intensity
+            if self.intensity != "medium":
+                prompt_parts.append(f"with {self.intensity} intensity")
+            
+            # Additional style descriptors
+            if self.style_descriptors:
+                style_str = ", ".join(self.style_descriptors)
+                prompt_parts.append(f"with {style_str} characteristics")
+            
+            return ". ".join(prompt_parts) + "."
+else:
+    # Fallback if Pydantic not available
+    class MusicGenerationRequest:
+        def __init__(self, **kwargs):
+            self.genre = kwargs.get('genre', 'electronic')
+            self.tempo = kwargs.get('tempo', 120)
+            self.mood = kwargs.get('mood', 'energetic')
+            self.duration = kwargs.get('duration', 30)
+            self.instruments = kwargs.get('instruments', ['drums', 'bass', 'synth'])
+            self.key = kwargs.get('key', 'C major')
+            self.intensity = kwargs.get('intensity', 'medium')
+            self.style_descriptors = kwargs.get('style_descriptors', [])
+            self.exclude_instruments = kwargs.get('exclude_instruments', [])
+        
+        def dict(self):
+            return {
+                'genre': self.genre,
+                'tempo': self.tempo,
+                'mood': self.mood,
+                'duration': self.duration,
+                'instruments': self.instruments,
+                'key': self.key,
+                'intensity': self.intensity,
+                'style_descriptors': self.style_descriptors,
+                'exclude_instruments': self.exclude_instruments
+            }
+        
+        def to_beatoven_prompt(self) -> str:
+            """Convert structured parameters to Beatoven.ai prompt"""
+            prompt_parts = []
+            
+            # Base description
+            prompt_parts.append(f"Create a {self.mood} {self.genre} track")
+            
+            # Tempo
+            if self.tempo:
+                prompt_parts.append(f"at {self.tempo} BPM")
+            
+            # Duration
+            if self.duration:
+                prompt_parts.append(f"lasting {self.duration} seconds")
+            
+            # Instruments to include
+            if self.instruments:
+                instruments_str = ", ".join(self.instruments)
+                prompt_parts.append(f"featuring {instruments_str}")
+            
+            # Instruments to exclude
+            if self.exclude_instruments:
+                exclude_str = ", ".join(self.exclude_instruments)
+                prompt_parts.append(f"without {exclude_str}")
+            
+            # Musical key
+            if self.key and self.key != "C major":
+                prompt_parts.append(f"in {self.key}")
+            
+            # Intensity
+            if self.intensity != "medium":
+                prompt_parts.append(f"with {self.intensity} intensity")
+            
+            # Additional style descriptors
+            if self.style_descriptors:
+                style_str = ", ".join(self.style_descriptors)
+                prompt_parts.append(f"with {style_str} characteristics")
+            
+            return ". ".join(prompt_parts) + "."
 
 def detect_reaper_action(message: str) -> bool:
     """
@@ -128,6 +253,148 @@ def detect_reaper_action(message: str) -> bool:
                 return True
     
     return False
+
+def detect_music_generation(message: str) -> bool:
+    """Detect if a user message is requesting music generation"""
+    return "generate" in message.lower()
+
+def parse_music_generation_request(message: str) -> MusicGenerationRequest:
+    """Parse user message and extract music generation parameters"""
+    message_lower = message.lower()
+    
+    # Extract genre
+    genre_keywords = {
+        "electronic": ["electronic", "edm", "techno", "house", "trance"],
+        "ambient": ["ambient", "atmospheric", "peaceful", "calm"],
+        "rock": ["rock", "metal", "punk", "grunge"],
+        "jazz": ["jazz", "swing", "bebop"],
+        "classical": ["classical", "orchestral", "piano"],
+        "hip hop": ["hip hop", "rap", "beats"],
+        "folk": ["folk", "acoustic", "country"],
+        "pop": ["pop", "commercial"],
+        "funk": ["funk", "groove"],
+        "blues": ["blues"],
+        "reggae": ["reggae"],
+        "drum and bass": ["drum and bass", "dnb", "jungle"]
+    }
+    
+    detected_genre = "electronic"  # default
+    for genre, keywords in genre_keywords.items():
+        if any(keyword in message_lower for keyword in keywords):
+            detected_genre = genre
+            break
+    
+    # Extract tempo/BPM
+    tempo_match = re.search(r'(\d+)\s*bpm|(\d+)\s*beats|tempo\s*(\d+)', message_lower)
+    detected_tempo = 120  # default
+    if tempo_match:
+        tempo_value = tempo_match.group(1) or tempo_match.group(2) or tempo_match.group(3)
+        try:
+            parsed_tempo = int(tempo_value)
+            if 60 <= parsed_tempo <= 200:
+                detected_tempo = parsed_tempo
+        except ValueError:
+            pass
+    
+    # Extract mood
+    mood_keywords = {
+        "happy": ["happy", "joyful", "upbeat", "cheerful", "bright"],
+        "sad": ["sad", "melancholy", "emotional", "slow", "depressing"],
+        "energetic": ["energetic", "powerful", "intense", "driving", "uplifting"],
+        "calm": ["calm", "peaceful", "relaxing", "soothing", "gentle"],
+        "dark": ["dark", "heavy", "aggressive", "hard", "brutal"],
+        "mysterious": ["mysterious", "eerie", "suspenseful"],
+        "romantic": ["romantic", "love", "sensual"],
+        "epic": ["epic", "cinematic", "dramatic", "heroic"]
+    }
+    
+    detected_mood = "energetic"  # default
+    for mood, keywords in mood_keywords.items():
+        if any(keyword in message_lower for keyword in keywords):
+            detected_mood = mood
+            break
+    
+    # Extract duration
+    duration_match = re.search(r'(\d+)\s*seconds?|(\d+)\s*minutes?|(\d+)\s*mins?', message_lower)
+    detected_duration = 30  # default
+    if duration_match:
+        if duration_match.group(1):  # seconds
+            try:
+                detected_duration = min(int(duration_match.group(1)), 120)
+            except ValueError:
+                pass
+        elif duration_match.group(2) or duration_match.group(3):  # minutes
+            try:
+                minutes = int(duration_match.group(2) or duration_match.group(3))
+                detected_duration = min(minutes * 60, 120)
+            except ValueError:
+                pass
+    
+    # Extract instruments
+    instrument_keywords = {
+        "drums": ["drums", "kick", "snare", "hi-hat", "percussion"],
+        "bass": ["bass", "bassline", "sub"],
+        "guitar": ["guitar", "electric guitar", "acoustic guitar"],
+        "piano": ["piano", "keys", "keyboard"],
+        "synth": ["synth", "synthesizer", "lead", "pad"],
+        "strings": ["strings", "violin", "orchestra"],
+        "brass": ["brass", "trumpet", "saxophone", "horn"],
+        "vocals": ["vocals", "voice", "singing"],
+        "flute": ["flute", "woodwind"],
+        "harp": ["harp"],
+        "organ": ["organ"]
+    }
+    
+    detected_instruments = []
+    for instrument, keywords in instrument_keywords.items():
+        if any(keyword in message_lower for keyword in keywords):
+            detected_instruments.append(instrument)
+    
+    # Default instruments if none detected
+    if not detected_instruments:
+        detected_instruments = ["drums", "bass", "synth"]
+    
+    # Extract excluded instruments
+    excluded_instruments = []
+    exclude_patterns = [
+        r'without\s+(\w+)',
+        r'no\s+(\w+)',
+        r'exclude\s+(\w+)',
+        r'minus\s+(\w+)'
+    ]
+    
+    for pattern in exclude_patterns:
+        matches = re.findall(pattern, message_lower)
+        for match in matches:
+            for instrument, keywords in instrument_keywords.items():
+                if match in keywords:
+                    excluded_instruments.append(instrument)
+                    if instrument in detected_instruments:
+                        detected_instruments.remove(instrument)
+    
+    # Extract musical key
+    key_match = re.search(r'in\s+([A-G](?:#|b)?\s+(?:major|minor))', message_lower)
+    detected_key = "C major"  # default
+    if key_match:
+        detected_key = key_match.group(1).title()
+    
+    # Extract intensity
+    detected_intensity = "medium"  # default
+    if any(word in message_lower for word in ["soft", "gentle", "quiet", "subtle"]):
+        detected_intensity = "low"
+    elif any(word in message_lower for word in ["loud", "intense", "powerful", "heavy", "aggressive"]):
+        detected_intensity = "high"
+    
+    return MusicGenerationRequest(
+        genre=detected_genre,
+        tempo=detected_tempo,
+        mood=detected_mood,
+        duration=detected_duration,
+        instruments=detected_instruments,
+        key=detected_key,
+        intensity=detected_intensity,
+        exclude_instruments=excluded_instruments
+    )
 
 @app.route('/transcribe', methods=['POST'])
 def transcribe_audio():
@@ -226,12 +493,63 @@ def chat_message():
         message = data['message']
         logger.info(f"Received chat message: {message}")
         
+        # Check if this is a music generation request first
+        if detect_music_generation(message):
+            logger.info("Detected music generation request")
+            try:
+                # Parse and generate music
+                music_request = parse_music_generation_request(message)
+                logger.info(f"Parsed music parameters: {music_request.dict()}")
+                
+                result = generate_music_with_beatoven(music_request)
+                
+                if result['success']:
+                    response = f"🎵 Generated music track: {result['filename']}\n\nParameters used:\n- Genre: {music_request.genre}\n- Tempo: {music_request.tempo} BPM\n- Mood: {music_request.mood}\n- Duration: {music_request.duration} seconds\n- Instruments: {', '.join(music_request.instruments)}\n\nThe track has been saved to the generated_music folder!"
+                    
+                    # Update conversation history
+                    conversation_history.append({"role": "user", "content": message})
+                    conversation_history.append({"role": "assistant", "content": response})
+                    
+                    # Keep only the last MAX_HISTORY messages
+                    if len(conversation_history) > MAX_HISTORY * 2:
+                        conversation_history = conversation_history[-MAX_HISTORY * 2:]
+                    
+                    # Generate TTS for the response
+                    try:
+                        if OpenAI:
+                            client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+                            tts_response = client.audio.speech.create(
+                                model="tts-1",
+                                voice="alloy",
+                                input=response
+                            )
+                            audio_base64 = base64.b64encode(tts_response.content).decode('utf-8')
+                        else:
+                            audio_base64 = None
+                    except Exception as e:
+                        logger.error(f"TTS generation failed: {e}")
+                        audio_base64 = None
+                    
+                    return jsonify({
+                        'success': True,
+                        'response': response,
+                        'audio': audio_base64,
+                        'music_generation': result
+                    })
+                else:
+                    response = f"I encountered an error while generating music: {result['error']}"
+                    
+            except Exception as e:
+                logger.error(f"Music generation error: {e}")
+                response = f"I encountered an error while generating music: {str(e)}"
+        
         # Check if this is a REAPER action request
-        if detect_reaper_action(message) and reaper_controller:
+        elif detect_reaper_action(message) and reaper_controller:
             logger.info("Detected REAPER action request - routing to Claude controller")
             try:
                 # Use Claude-powered REAPER controller for DAW operations
-                reaper_response = reaper_controller.process_query_with_chaining(message)
+                # Pass conversation history for context
+                reaper_response = reaper_controller.process_query_with_chaining(message, conversation_history)
                 
                 # Generate TTS for the REAPER response
                 try:
@@ -262,8 +580,7 @@ def chat_message():
                     'success': True,
                     'response': reaper_response,
                     'audio': audio_base64,
-                    'reaper_action': True,
-                    'music_generation': None
+                    'reaper_action': True
                 })
                 
             except Exception as e:
@@ -288,36 +605,6 @@ def chat_message():
 - Automation and mixing
 - Music theory and composition
 - Sound design and synthesis
-- AI-powered music generation using Beatoven.ai
-
-IMPORTANT: When users request music generation, you MUST respond with a JSON object. Look for these keywords and phrases:
-- "generate", "create", "make", "produce"
-- "track", "beat", "melody", "bass", "drum", "snare", "kick", "hi-hat"
-- "music", "song", "rhythm", "pattern"
-- "bpm", "tempo", "key", "genre"
-
-Examples of requests that should trigger music generation:
-- "can you generate me a snare drumline please"
-- "create a techno track with heavy bass"
-- "make a beat at 120 bpm"
-- "generate a peaceful ambient melody"
-- "produce a dark techno track"
-- "create an 80s rock song without drums"
-
-INSTRUMENT COVERAGE GUIDELINES:
-- By default, include ALL essential instruments: drums, bass, rhythm, lead melody, harmony
-- Only exclude instruments if the user specifically requests it (e.g., "without drums", "no bass")
-- Always create complete instrumental arrangements unless specified otherwise
-- Focus on musical composition, not vocals or lyrics
-
-When you detect a music generation request, respond with this exact JSON format:
-{
-  "action": "generate_music",
-  "instructions": "detailed music generation instructions including tempo, genre, instruments, and any specific exclusions",
-  "response": "your helpful response about the music generation"
-}
-
-For regular questions about REAPER, music theory, or production techniques, respond normally without JSON formatting.
 
 Be helpful, concise, and focus on practical music production advice. If someone asks about creating tracks, melodies, or specific REAPER features, provide detailed, actionable guidance. Keep responses conversational but informative."""
 
@@ -341,27 +628,6 @@ Be helpful, concise, and focus on practical music production advice. If someone 
                 
                 response = gpt_response.choices[0].message.content.strip()
                 logger.info(f"GPT response: {response}")
-                
-                # Check if this is a music generation request
-                music_generation_result = None
-                try:
-                    # Try to parse as JSON to check for music generation action
-                    response_data = json.loads(response)
-                    if response_data.get('action') == 'generate_music':
-                        logger.info("Detected music generation request")
-                        
-                        # Generate music using Beatoven.ai
-                        music_response = generate_music_internal(response_data.get('instructions', ''))
-                        if music_response.get('success'):
-                            music_generation_result = music_response
-                            response = response_data.get('response', 'Music generation completed!')
-                        else:
-                            response = f"Music generation failed: {music_response.get('error', 'Unknown error')}"
-                            
-                except (json.JSONDecodeError, KeyError) as e:
-                    # Not a music generation request or invalid JSON, use normal response
-                    logger.info(f"Not a music generation request or JSON parsing failed: {e}")
-                    pass
                 
                 # Update conversation history
                 conversation_history.append({"role": "user", "content": message})
@@ -395,12 +661,160 @@ Be helpful, concise, and focus on practical music production advice. If someone 
         return jsonify({
             'success': True,
             'response': response,
-            'audio': audio_base64,
-            'music_generation': music_generation_result
+            'audio': audio_base64
         })
         
     except Exception as e:
         logger.error(f"Chat error: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+def create_filename_from_request(music_request: MusicGenerationRequest) -> str:
+    """Create a filename based on the music generation request"""
+    # Create a descriptive filename
+    filename_parts = [
+        music_request.genre.replace(" ", "_"),
+        f"{music_request.tempo}bpm",
+        music_request.mood,
+        f"{music_request.duration}s"
+    ]
+    
+    # Add timestamp for uniqueness
+    timestamp = int(time.time())
+    filename_base = "_".join(filename_parts) + f"_{timestamp}"
+    
+    # Clean filename
+    filename_base = re.sub(r'[^a-zA-Z0-9_]', '', filename_base)
+    
+    return filename_base
+
+def generate_music_with_beatoven(music_request: MusicGenerationRequest) -> dict:
+    """Generate music using Beatoven.ai with structured parameters"""
+    try:
+        if not requests:
+            return {'success': False, 'error': 'Requests library not available'}
+        
+        # Get API key
+        api_key = os.getenv('BEATOVEN_AI_API_KEY')
+        if not api_key:
+            return {'success': False, 'error': 'Beatoven.ai API key not found in environment'}
+        
+        # Convert Pydantic model to Beatoven.ai prompt
+        beatoven_prompt = music_request.to_beatoven_prompt()
+        logger.info(f"Generated Beatoven.ai prompt: {beatoven_prompt}")
+        
+        # Prepare API payload
+        payload = {
+            "prompt": {
+                "text": beatoven_prompt
+            },
+            "format": "wav",
+            "looping": False
+        }
+        
+        # Send request to Beatoven.ai
+        response = requests.post(
+            "https://public-api.beatoven.ai/api/v1/tracks/compose",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            },
+            json=payload
+        )
+        
+        if response.status_code != 200:
+            logger.error(f"Beatoven.ai request failed: {response.status_code} - {response.text}")
+            return {'success': False, 'error': f"Beatoven.ai API error: {response.text}"}
+        
+        response_data = response.json()
+        if response_data.get('status') not in ['started', 'composing'] or 'task_id' not in response_data:
+            logger.error(f"Invalid Beatoven.ai response: {response_data}")
+            return {'success': False, 'error': 'Invalid response from Beatoven.ai'}
+        
+        task_id = response_data['task_id']
+        logger.info(f"Beatoven.ai composition started with task_id: {task_id}")
+        
+        # Poll for completion
+        max_attempts = 60  # 5 minutes with 5-second intervals
+        for attempt in range(max_attempts):
+            time.sleep(5)
+            
+            status_response = requests.get(
+                f"https://public-api.beatoven.ai/api/v1/tasks/{task_id}",
+                headers={"Authorization": f"Bearer {api_key}"}
+            )
+            
+            if status_response.status_code != 200:
+                logger.warning(f"Status check failed: {status_response.status_code}")
+                continue
+            
+            status_data = status_response.json()
+            status = status_data.get('status')
+            
+            logger.info(f"Task status: {status} (attempt {attempt + 1}/{max_attempts})")
+            
+            if status == 'composed':
+                # Download the track
+                track_url = status_data.get('meta', {}).get('track_url')
+                if not track_url:
+                    return {'success': False, 'error': 'No track URL in response'}
+                
+                audio_response = requests.get(track_url)
+                if audio_response.status_code != 200:
+                    return {'success': False, 'error': 'Failed to download audio file'}
+                
+                # Save to generated_music folder
+                filename_base = create_filename_from_request(music_request)
+                output_filename = f"{filename_base}.wav"
+                output_dir = os.path.join(os.path.dirname(__file__), 'generated_music')
+                os.makedirs(output_dir, exist_ok=True)
+                output_path = os.path.join(output_dir, output_filename)
+                
+                with open(output_path, 'wb') as f:
+                    f.write(audio_response.content)
+                
+                logger.info(f"Generated music saved: {output_path}")
+                
+                return {
+                    'success': True,
+                    'message': f'Generated music track: {output_filename}',
+                    'file_path': output_path,
+                    'filename': output_filename,
+                    'parameters': music_request.dict(),
+                    'prompt': beatoven_prompt
+                }
+            
+            elif status in ['failed', 'error']:
+                return {'success': False, 'error': f'Beatoven.ai composition failed: {status_data}'}
+        
+        # Timeout
+        return {'success': False, 'error': 'Beatoven.ai composition timed out'}
+        
+    except Exception as e:
+        logger.error(f"Music generation error: {e}")
+        return {'success': False, 'error': str(e)}
+
+@app.route('/generate-music', methods=['POST'])
+def generate_music():
+    """Generate music using Beatoven.ai with Pydantic model"""
+    try:
+        data = request.get_json()
+        if not data or 'query' not in data:
+            return jsonify({'success': False, 'error': 'No query provided'})
+        
+        user_query = data['query']
+        logger.info(f"Music generation request: {user_query}")
+        
+        # Parse query into structured parameters
+        music_request = parse_music_generation_request(user_query)
+        logger.info(f"Parsed parameters: {music_request.dict()}")
+        
+        # Generate music
+        result = generate_music_with_beatoven(music_request)
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Generate music endpoint error: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/clear-conversation', methods=['POST'])
@@ -436,7 +850,8 @@ def reaper_action():
         
         # Use Claude-powered REAPER controller
         try:
-            result = reaper_controller.process_query_with_chaining(action)
+            # Pass conversation history for context in standalone actions too
+            result = reaper_controller.process_query_with_chaining(action, conversation_history)
             logger.info(f"REAPER action completed: {result[:100]}...")
             
             return jsonify({
@@ -453,716 +868,20 @@ def reaper_action():
         logger.error(f"REAPER action endpoint error: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
-@app.route('/generate-music', methods=['POST'])
-def generate_music():
-    """Generate music using Beatoven.ai"""
-    try:
-        data = request.get_json()
-        if not data or 'instructions' not in data:
-            return jsonify({'success': False, 'error': 'No instructions provided'})
-        
-        instructions = data['instructions']
-        logger.info(f"Generating music with instructions: {instructions}")
-        
-        if not requests:
-            return jsonify({'success': False, 'error': 'Beatoven.ai not available'})
-        
-        # Configure Beatoven.ai
-        api_key = os.getenv('BEATOVEN_AI_API_KEY')
-        if not api_key:
-            return jsonify({'success': False, 'error': 'Beatoven.ai API key not found'})
-        
-        # Create structured prompt for Beatoven.ai
-        beatoven_prompt = create_instrument_aware_prompt(instructions)
-        
-        # Prepare the request payload for Beatoven.ai music generation
-        payload = {
-            "prompt": {
-                "text": beatoven_prompt
-            },
-            "format": "wav",
-            "looping": False
-        }
-        
-        # Send the request to Beatoven.ai music generation API
-        response = requests.post(
-            "https://public-api.beatoven.ai/api/v1/tracks/compose",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            json=payload
-        )
-        
-        if response.status_code != 200:
-            logger.error(f"Beatoven.ai request failed with status code: {response.status_code}")
-            logger.error(f"Response: {response.text}")
-            return jsonify({'success': False, 'error': f"Beatoven.ai request failed: {response.text}"})
-        
-        # Parse the response to get task_id
-        response_data = response.json()
-        if response_data.get('status') not in ['started', 'composing'] or 'task_id' not in response_data:
-            logger.error(f"Invalid Beatoven.ai response: {response_data}")
-            return jsonify({'success': False, 'error': 'Invalid response from Beatoven.ai'})
-        
-        task_id = response_data['task_id']
-        logger.info(f"Beatoven.ai composition started with task_id: {task_id}")
-        
-        # Poll for completion (with timeout)
-        max_attempts = 60  # 5 minutes with 5-second intervals
-        for attempt in range(max_attempts):
-            time.sleep(5)  # Wait 5 seconds between checks
-            
-            # Check task status
-            status_response = requests.get(
-                f"https://public-api.beatoven.ai/api/v1/tasks/{task_id}",
-                headers={"Authorization": f"Bearer {api_key}"}
-            )
-            
-            if status_response.status_code != 200:
-                logger.error(f"Status check failed: {status_response.status_code}")
-                continue
-            
-            status_data = status_response.json()
-            status = status_data.get('status')
-            
-            logger.info(f"Task status: {status} (attempt {attempt + 1}/{max_attempts})")
-            
-            if status == 'composed':
-                # Download the generated track
-                track_url = status_data.get('meta', {}).get('track_url')
-                if not track_url:
-                    return jsonify({'success': False, 'error': 'No track URL in response'})
-                
-                # Download the audio file
-                audio_response = requests.get(track_url)
-                if audio_response.status_code != 200:
-                    return jsonify({'success': False, 'error': 'Failed to download audio file'})
-                
-                audio_data = audio_response.content
-                
-                # Generate filename based on user input
-                filename_base = create_filename_from_prompt(instructions)
-                output_filename = f"{filename_base}.wav"
-                output_path = os.path.join(os.path.dirname(__file__), 'generated_music', output_filename)
-                
-                # Create directory if it doesn't exist
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                
-                # Save the audio file
-                with open(output_path, 'wb') as f:
-                    f.write(audio_data)
-                
-                logger.info(f"Generated music file: {output_path}")
-                
-                # Import into REAPER if available
-                try:
-                    if 'reapy' in sys.modules:
-                        project = reapy.Project()
-                        
-                        # Add the generated audio file to REAPER
-                        track = project.add_track()
-                        track.add_item(0, output_path)
-                        
-                        logger.info(f"Added {output_filename} to REAPER")
-                        
-                except Exception as e:
-                    logger.warning(f"Could not import to REAPER: {e}")
-                
-                return jsonify({
-                    'success': True,
-                    'message': f'Generated music track: {output_filename}',
-                    'file_path': output_path,
-                    'structured_instructions': {
-                        'description': instructions,
-                        'task_id': task_id,
-                        'format': 'wav'
-                    }
-                })
-            
-            elif status in ['failed', 'error']:
-                return jsonify({'success': False, 'error': f'Beatoven.ai composition failed: {status_data}'})
-        
-        # Timeout
-        return jsonify({'success': False, 'error': 'Beatoven.ai composition timed out'})
-        
-    except Exception as e:
-        logger.error(f"Music generation error: {e}")
-        return jsonify({'success': False, 'error': str(e)})
-
-def generate_music_internal(instructions):
-    """Internal function to generate music using Beatoven.ai"""
-    try:
-        logger.info(f"Generating music with instructions: {instructions}")
-        
-        if not requests:
-            return {'success': False, 'error': 'Beatoven.ai not available'}
-        
-        # Configure Beatoven.ai
-        api_key = os.getenv('BEATOVEN_AI_API_KEY')
-        if not api_key:
-            return {'success': False, 'error': 'Beatoven.ai API key not found'}
-        
-        # Create structured prompt for Beatoven.ai
-        beatoven_prompt = create_instrument_aware_prompt(instructions)
-        
-        # Prepare the request payload for Beatoven.ai music generation
-        payload = {
-            "prompt": {
-                "text": beatoven_prompt
-            },
-            "format": "wav",
-            "looping": False
-        }
-        
-        # Send the request to Beatoven.ai music generation API
-        response = requests.post(
-            "https://public-api.beatoven.ai/api/v1/tracks/compose",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            },
-            json=payload
-        )
-        
-        if response.status_code != 200:
-            logger.error(f"Beatoven.ai request failed with status code: {response.status_code}")
-            logger.error(f"Response: {response.text}")
-            return {'success': False, 'error': f"Beatoven.ai request failed: {response.text}"}
-        
-        # Parse the response to get task_id
-        response_data = response.json()
-        if response_data.get('status') not in ['started', 'composing'] or 'task_id' not in response_data:
-            logger.error(f"Invalid Beatoven.ai response: {response_data}")
-            return {'success': False, 'error': 'Invalid response from Beatoven.ai'}
-        
-        task_id = response_data['task_id']
-        logger.info(f"Beatoven.ai composition started with task_id: {task_id}")
-        
-        # Poll for completion (with timeout)
-        max_attempts = 60  # 5 minutes with 5-second intervals
-        for attempt in range(max_attempts):
-            time.sleep(5)  # Wait 5 seconds between checks
-            
-            # Check task status
-            status_response = requests.get(
-                f"https://public-api.beatoven.ai/api/v1/tasks/{task_id}",
-                headers={"Authorization": f"Bearer {api_key}"}
-            )
-            
-            if status_response.status_code != 200:
-                logger.error(f"Status check failed: {status_response.status_code}")
-                continue
-            
-            status_data = status_response.json()
-            status = status_data.get('status')
-            
-            logger.info(f"Task status: {status} (attempt {attempt + 1}/{max_attempts})")
-            
-            if status == 'composed':
-                # Download the generated track
-                track_url = status_data.get('meta', {}).get('track_url')
-                if not track_url:
-                    return {'success': False, 'error': 'No track URL in response'}
-                
-                # Download the audio file
-                audio_response = requests.get(track_url)
-                if audio_response.status_code != 200:
-                    return {'success': False, 'error': 'Failed to download audio file'}
-                
-                audio_data = audio_response.content
-                
-                # Generate filename based on user input
-                filename_base = create_filename_from_prompt(instructions)
-                output_filename = f"{filename_base}.wav"
-                output_path = os.path.join(os.path.dirname(__file__), 'generated_music', output_filename)
-                
-                # Create directory if it doesn't exist
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                
-                # Save the audio file
-                with open(output_path, 'wb') as f:
-                    f.write(audio_data)
-                
-                logger.info(f"Generated music file: {output_path}")
-                
-                # Import into REAPER if available
-                try:
-                    if 'reapy' in sys.modules:
-                        project = reapy.Project()
-                        
-                        # Add the generated audio file to REAPER
-                        track = project.add_track()
-                        track.add_item(0, output_path)
-                        
-                        logger.info(f"Added {output_filename} to REAPER")
-                        
-                except Exception as e:
-                    logger.warning(f"Could not import to REAPER: {e}")
-                
-                return {
-                    'success': True,
-                    'message': f'Generated music track: {output_filename}',
-                    'file_path': output_path,
-                    'structured_instructions': {
-                        'description': instructions,
-                        'task_id': task_id,
-                        'format': 'wav'
-                    }
-                }
-            
-            elif status in ['failed', 'error']:
-                return {'success': False, 'error': f'Beatoven.ai composition failed: {status_data}'}
-        
-        # Timeout
-        return {'success': False, 'error': 'Beatoven.ai composition timed out'}
-        
-    except Exception as e:
-        logger.error(f"Music generation error: {e}")
-        return {'success': False, 'error': str(e)}
-
-def create_filename_from_prompt(prompt):
-    """Create a filename based on the user's prompt"""
-    # Clean the prompt for filename use
-    import re
-    
-    # Remove special characters and convert to lowercase
-    clean_name = re.sub(r'[^a-zA-Z0-9\s]', '', prompt.lower())
-    
-    # Replace spaces with underscores
-    clean_name = re.sub(r'\s+', '_', clean_name)
-    
-    # Limit length and remove leading/trailing underscores
-    clean_name = clean_name.strip('_')[:50]
-    
-    # Add timestamp to ensure uniqueness
-    timestamp = int(time.time())
-    
-    return f"{clean_name}_{timestamp}"
-
-def generate_dynamic_audio(structured_instructions, sample_rate, duration):
-    """Generate more dynamic audio based on structured instructions"""
-    import numpy as np
-    
-    # Extract parameters from structured instructions
-    tempo = structured_instructions.get('tempo', 120)
-    genre = structured_instructions.get('genre', 'electronic').lower()
-    mood = structured_instructions.get('mood', 'energetic').lower()
-    instruments = structured_instructions.get('instruments', ['synth', 'drums', 'bass'])
-    
-    # Calculate samples needed
-    total_samples = int(sample_rate * duration)
-    
-    # Initialize audio array
-    audio_data = np.zeros(total_samples)
-    
-    # Generate different audio based on genre and mood
-    if 'drum' in ' '.join(instruments).lower() or 'beat' in ' '.join(instruments).lower() or 'snare' in ' '.join(instruments).lower():
-        # Generate drum-like pattern
-        audio_data = generate_drum_pattern(sample_rate, duration, tempo, mood)
-    elif 'bass' in ' '.join(instruments).lower():
-        # Generate bass line
-        audio_data = generate_bass_line(sample_rate, duration, tempo, mood)
-    elif 'melody' in ' '.join(instruments).lower() or 'synth' in ' '.join(instruments).lower():
-        # Generate melodic content
-        audio_data = generate_melody(sample_rate, duration, tempo, mood)
-    else:
-        # Generate ambient/pad-like content
-        audio_data = generate_ambient_pad(sample_rate, duration, mood)
-    
-    # Normalize audio
-    if np.max(np.abs(audio_data)) > 0:
-        audio_data = audio_data / np.max(np.abs(audio_data)) * 0.3
-    
-    # Convert to 16-bit PCM
-    audio_data = (audio_data * 32767).astype(np.int16)
-    
-    return audio_data
-
-def generate_drum_pattern(sample_rate, duration, tempo, mood):
-    """Generate a drum pattern"""
-    import numpy as np
-    
-    total_samples = int(sample_rate * duration)
-    audio_data = np.zeros(total_samples)
-    
-    # Calculate beat timing
-    beats_per_second = tempo / 60
-    samples_per_beat = int(sample_rate / beats_per_second)
-    
-    # Generate kick drum (low frequency)
-    kick_freq = 60
-    kick_duration = 0.1  # 100ms
-    kick_samples = int(sample_rate * kick_duration)
-    
-    for i in range(0, total_samples, samples_per_beat):
-        if i + kick_samples < total_samples:
-            t = np.linspace(0, kick_duration, kick_samples)
-            kick = np.sin(2 * np.pi * kick_freq * t) * np.exp(-5 * t)
-            audio_data[i:i+kick_samples] += kick * 0.5
-    
-    # Generate snare drum (mid frequency with noise)
-    snare_freq = 200
-    snare_duration = 0.15  # 150ms
-    snare_samples = int(sample_rate * snare_duration)
-    
-    for i in range(samples_per_beat // 2, total_samples, samples_per_beat):  # On the 2 and 4
-        if i + snare_samples < total_samples:
-            t = np.linspace(0, snare_duration, snare_samples)
-            # Create snare sound with noise component
-            snare_tone = np.sin(2 * np.pi * snare_freq * t) * np.exp(-3 * t)
-            snare_noise = np.random.normal(0, 1, snare_samples) * np.exp(-8 * t)
-            snare = snare_tone + snare_noise * 0.3
-            audio_data[i:i+snare_samples] += snare * 0.4
-    
-    # Generate hi-hat (high frequency)
-    hat_freq = 8000
-    hat_duration = 0.05  # 50ms
-    hat_samples = int(sample_rate * hat_duration)
-    
-    for i in range(0, total_samples, samples_per_beat // 2):  # Every half beat
-        if i + hat_samples < total_samples:
-            t = np.linspace(0, hat_duration, hat_samples)
-            hat = np.sin(2 * np.pi * hat_freq * t) * np.exp(-20 * t)
-            audio_data[i:i+hat_samples] += hat * 0.3
-    
-    return audio_data
-
-def generate_bass_line(sample_rate, duration, tempo, mood):
-    """Generate a bass line"""
-    import numpy as np
-    
-    total_samples = int(sample_rate * duration)
-    audio_data = np.zeros(total_samples)
-    
-    # Bass frequencies based on mood
-    if 'dark' in mood or 'heavy' in mood:
-        bass_freqs = [55, 65, 73, 82]  # A1, C2, D2, E2
-    else:
-        bass_freqs = [82, 98, 110, 123]  # E2, G2, A2, B2
-    
-    # Generate bass pattern
-    beats_per_second = tempo / 60
-    samples_per_beat = int(sample_rate / beats_per_second)
-    
-    for i in range(0, total_samples, samples_per_beat):
-        if i + samples_per_beat < total_samples:
-            freq = np.random.choice(bass_freqs)
-            t = np.linspace(0, 1/beats_per_second, samples_per_beat)
-            bass_note = np.sin(2 * np.pi * freq * t) * np.exp(-2 * t)
-            audio_data[i:i+samples_per_beat] += bass_note * 0.4
-    
-    return audio_data
-
-def generate_melody(sample_rate, duration, tempo, mood):
-    """Generate a melodic line"""
-    import numpy as np
-    
-    total_samples = int(sample_rate * duration)
-    audio_data = np.zeros(total_samples)
-    
-    # Melody frequencies based on mood
-    if 'happy' in mood or 'bright' in mood:
-        melody_freqs = [440, 494, 523, 587, 659, 698, 784]  # A4 to G5
-    elif 'sad' in mood or 'dark' in mood:
-        melody_freqs = [220, 247, 262, 294, 330, 349, 392]  # A3 to G4
-    else:
-        melody_freqs = [330, 370, 415, 440, 494, 523, 587]  # E4 to D5
-    
-    # Generate melody pattern
-    beats_per_second = tempo / 60
-    samples_per_beat = int(sample_rate / beats_per_second)
-    
-    for i in range(0, total_samples, samples_per_beat * 2):  # Every 2 beats
-        if i + samples_per_beat < total_samples:
-            freq = np.random.choice(melody_freqs)
-            t = np.linspace(0, 2/beats_per_second, samples_per_beat * 2)
-            melody_note = np.sin(2 * np.pi * freq * t) * np.exp(-1 * t)
-            audio_data[i:i+samples_per_beat*2] += melody_note * 0.3
-    
-    return audio_data
-
-def generate_ambient_pad(sample_rate, duration, mood):
-    """Generate ambient pad-like content"""
-    import numpy as np
-    
-    total_samples = int(sample_rate * duration)
-    audio_data = np.zeros(total_samples)
-    
-    # Ambient frequencies based on mood
-    if 'peaceful' in mood or 'ambient' in mood:
-        pad_freqs = [110, 165, 220, 330]  # A2, E3, A3, E4
-    else:
-        pad_freqs = [220, 330, 440, 660]  # A3, E4, A4, E5
-    
-    # Generate layered pad
-    for freq in pad_freqs:
-        t = np.linspace(0, duration, total_samples)
-        pad_layer = np.sin(2 * np.pi * freq * t) * 0.1
-        # Add slow modulation
-        modulation = np.sin(2 * np.pi * 0.1 * t) * 0.05
-        audio_data += pad_layer + modulation
-    
-    return audio_data
-
-def extract_bpm_from_text(text):
-    """Extract BPM from text input"""
-    import re
-    
-    # Look for BPM patterns like "120 bpm", "120BPM", "120 BPM", etc.
-    bpm_patterns = [
-        r'(\d+)\s*bpm',  # 120 bpm
-        r'(\d+)\s*BPM',  # 120 BPM
-        r'(\d+)\s*beats?\s*per\s*minute',  # 120 beats per minute
-        r'tempo\s*(\d+)',  # tempo 120
-        r'(\d+)\s*tempo',  # 120 tempo
-    ]
-    
-    for pattern in bpm_patterns:
-        match = re.search(pattern, text.lower())
-        if match:
-            try:
-                bpm = int(match.group(1))
-                if 60 <= bpm <= 200:  # Reasonable BPM range
-                    return bpm
-            except ValueError:
-                continue
-    
-    return None
-
-def create_fallback_instructions(instructions):
-    """Create fallback structured instructions based on user input"""
-    import re
-    
-    # Extract BPM if mentioned
-    bpm = extract_bpm_from_text(instructions)
-    if not bpm:
-        bpm = 120  # Default BPM
-    
-    # Determine genre and instruments based on keywords
-    instructions_lower = instructions.lower()
-    
-    # Detect instruments
-    instruments = []
-    if 'snare' in instructions_lower or 'drum' in instructions_lower:
-        instruments.append('snare')
-        instruments.append('drums')
-    if 'bass' in instructions_lower:
-        instruments.append('bass')
-    if 'melody' in instructions_lower or 'synth' in instructions_lower:
-        instruments.append('synth')
-    if 'kick' in instructions_lower:
-        instruments.append('kick')
-    if 'hi-hat' in instructions_lower or 'hihat' in instructions_lower:
-        instruments.append('hi-hat')
-    
-    # Default instruments if none detected
-    if not instruments:
-        instruments = ['drums', 'bass', 'synth']
-    
-    # Detect genre
-    genre = 'electronic'
-    if 'techno' in instructions_lower:
-        genre = 'techno'
-    elif 'ambient' in instructions_lower:
-        genre = 'ambient'
-    elif 'drum' in instructions_lower and 'bass' in instructions_lower:
-        genre = 'drum and bass'
-    
-    # Detect mood
-    mood = 'energetic'
-    if 'dark' in instructions_lower or 'heavy' in instructions_lower:
-        mood = 'dark'
-    elif 'peaceful' in instructions_lower or 'calm' in instructions_lower:
-        mood = 'peaceful'
-    elif 'happy' in instructions_lower or 'bright' in instructions_lower:
-        mood = 'happy'
-    
-    # Determine duration
-    duration = 30  # Default 30 seconds
-    if 'track' in instructions_lower or 'song' in instructions_lower:
-        duration = 60  # Full track length
-    
-    return {
-        "genre": genre,
-        "tempo": bpm,
-        "key": "C major",
-        "mood": mood,
-        "instruments": instruments,
-        "duration": duration,
-        "description": instructions
-    }
-
-def generate_fallback_audio(structured_instructions, sample_rate, duration):
-    """Generate fallback audio if Beatoven.ai fails"""
-    import numpy as np
-    
-    # Extract parameters from structured instructions
-    tempo = structured_instructions.get('tempo', 120)
-    genre = structured_instructions.get('genre', 'electronic').lower()
-    mood = structured_instructions.get('mood', 'energetic').lower()
-    instruments = structured_instructions.get('instruments', ['synth', 'drums', 'bass'])
-    
-    # Calculate samples needed
-    total_samples = int(sample_rate * duration)
-    
-    # Initialize audio array
-    audio_data = np.zeros(total_samples)
-    
-    # Generate different audio based on genre and mood
-    if 'drum' in ' '.join(instruments).lower() or 'beat' in ' '.join(instruments).lower() or 'snare' in ' '.join(instruments).lower():
-        # Generate drum-like pattern
-        audio_data = generate_drum_pattern(sample_rate, duration, tempo, mood)
-    elif 'bass' in ' '.join(instruments).lower():
-        # Generate bass line
-        audio_data = generate_bass_line(sample_rate, duration, tempo, mood)
-    elif 'melody' in ' '.join(instruments).lower() or 'synth' in ' '.join(instruments).lower():
-        # Generate melodic content
-        audio_data = generate_melody(sample_rate, duration, tempo, mood)
-    else:
-        # Generate ambient/pad-like content
-        audio_data = generate_ambient_pad(sample_rate, duration, mood)
-    
-    # Normalize audio
-    if np.max(np.abs(audio_data)) > 0:
-        audio_data = audio_data / np.max(np.abs(audio_data)) * 0.3
-    
-    # Convert to 16-bit PCM
-    audio_data = (audio_data * 32767).astype(np.int16)
-    
-    return audio_data
-
-def create_instrument_aware_prompt(user_request):
-    """Create a detailed, instrument-aware prompt for Beatoven.ai based on user request"""
-    
-    # Default instrument layout
-    default_instruments = {
-        'drums': 'Full drum kit with kick, snare, hi-hats, cymbals, toms',
-        'bass': 'Prominent bass line that drives the rhythm',
-        'rhythm': 'Rhythm guitar or keys with chord progressions',
-        'lead': 'Main melodic instrument (guitar, synth, piano, etc.)',
-        'harmony': 'Supporting harmonic elements and textures',
-        'effects': 'Reverb, delay, and atmospheric elements'
-    }
-    
-    # Genre-specific instrument adjustments
-    user_request_lower = user_request.lower()
-    
-    # Detect genre and adjust instruments accordingly
-    if any(genre in user_request_lower for genre in ['ambient', 'atmospheric', 'peaceful']):
-        # Ambient music typically doesn't need heavy drums
-        default_instruments['drums'] = 'Subtle, minimal percussion with gentle cymbals and soft toms'
-        default_instruments['bass'] = 'Deep, atmospheric bass with long, sustained notes'
-        default_instruments['rhythm'] = 'Atmospheric pads and ambient textures'
-        default_instruments['lead'] = 'Ethereal melodic instruments (piano, strings, synth)'
-        
-    elif any(genre in user_request_lower for genre in ['classical', 'piano']):
-        # Classical piano pieces are typically solo or minimal
-        default_instruments['drums'] = 'No drums - classical piano piece'
-        default_instruments['bass'] = 'No bass - classical piano piece'
-        default_instruments['rhythm'] = 'No rhythm section - classical piano piece'
-        default_instruments['lead'] = 'Solo piano with classical technique and dynamics'
-        default_instruments['harmony'] = 'Classical harmonic progressions and voicings'
-        
-    elif any(genre in user_request_lower for genre in ['jazz']):
-        # Jazz typically has specific instrumentation
-        default_instruments['drums'] = 'Jazz drum kit with ride cymbal, brushes, and swing feel'
-        default_instruments['bass'] = 'Upright bass or electric bass with walking bass lines'
-        default_instruments['rhythm'] = 'Piano or guitar with jazz chord voicings'
-        default_instruments['lead'] = 'Saxophone, trumpet, or piano for melodic lines'
-        
-    elif any(genre in user_request_lower for genre in ['hip hop', 'rap']):
-        # Hip hop focuses on beats and bass
-        default_instruments['drums'] = 'Hip hop drum machine with heavy kick, snare, and hi-hats'
-        default_instruments['bass'] = 'Deep, punchy bass with 808-style sounds'
-        default_instruments['rhythm'] = 'Sampled loops or minimal chord progressions'
-        default_instruments['lead'] = 'Sampled melodies or synth leads'
-        
-    elif any(genre in user_request_lower for genre in ['techno', 'electronic']):
-        # Electronic music uses synthesized sounds
-        default_instruments['drums'] = 'Electronic drum machine with kick, snare, hi-hats, and claps'
-        default_instruments['bass'] = 'Synthesized bass with filter sweeps and modulation'
-        default_instruments['rhythm'] = 'Synthesized arpeggios and rhythmic elements'
-        default_instruments['lead'] = 'Synthesized leads with modulation and effects'
-        
-    elif any(genre in user_request_lower for genre in ['rock', '80s']):
-        # Rock music uses traditional rock instrumentation
-        default_instruments['drums'] = 'Rock drum kit with powerful kick, snare, and crash cymbals'
-        default_instruments['bass'] = 'Electric bass with driving rock bass lines'
-        default_instruments['rhythm'] = 'Electric guitar with power chords and rock riffs'
-        default_instruments['lead'] = 'Electric guitar solos and melodic lines'
-    
-    # Analyze user request for instrument exclusions
-    excluded_instruments = []
-    
-    # Check for instrument exclusions
-    if any(phrase in user_request_lower for phrase in ['without drums', 'no drums', 'drumless']):
-        excluded_instruments.append('drums')
-    if any(phrase in user_request_lower for phrase in ['without bass', 'no bass', 'bassless']):
-        excluded_instruments.append('bass')
-    if any(phrase in user_request_lower for phrase in ['without guitar', 'no guitar', 'guitarless']):
-        excluded_instruments.append('rhythm')
-        excluded_instruments.append('lead')
-    if any(phrase in user_request_lower for phrase in ['without keys', 'no keys', 'keyboardless']):
-        excluded_instruments.append('rhythm')
-        excluded_instruments.append('lead')
-    
-    # Build the instrument section
-    instrument_section = "INSTRUMENT LAYOUT:\n"
-    for instrument, description in default_instruments.items():
-        if instrument not in excluded_instruments:
-            instrument_section += f"- {description}\n"
-    
-    if excluded_instruments:
-        instrument_section += f"\nEXCLUDED INSTRUMENTS: {', '.join(excluded_instruments).title()}\n"
-    
-    # Create the comprehensive prompt
-    prompt = f"""
-Generate a complete, professional instrumental track based on this request: {user_request}
-
-IMPORTANT REQUIREMENTS:
-- This is an INSTRUMENTAL track - NO vocals, NO lyrics, NO singing
-- Focus on musical composition and arrangement, not vocal elements
-- Create a full, balanced arrangement with all specified instruments
-
-{instrument_section}
-COMPOSITION GUIDELINES:
-- Create dynamic, evolving arrangements with clear sections
-- Include proper musical structure (intro, verse, bridge, etc.)
-- Ensure all instruments work together harmoniously
-- Add variation and progression throughout the track
-- Make it sound like professional studio production
-
-STYLE NOTES:
-- Match the requested genre and mood precisely
-- Use appropriate instrumentation for the style
-- Create authentic, genre-appropriate sounds
-- Ensure professional mixing and balance
-- Make each instrument distinct and well-defined in the mix
-
-PRODUCTION QUALITY:
-- Professional studio-grade sound quality
-- Clear separation between instruments
-- Balanced frequency spectrum
-- Dynamic range appropriate for the genre
-- Polished, radio-ready production
-"""
-    
-    return prompt.strip()
-
 if __name__ == "__main__":
     print("Starting Music Production Assistant Backend...")
     print("Available services:")
     print("- OpenAI Whisper transcription: http://localhost:5000/transcribe")
     print("- Text-to-speech: http://localhost:5000/tts")
-    print("- Chat messages (hybrid OpenAI + Claude): http://localhost:5000/chat")
+    print("- Chat messages (hybrid OpenAI + Claude + Beatoven.ai): http://localhost:5000/chat")
     print("- Clear conversation: http://localhost:5000/clear-conversation")
-    print("- Generate music (Beatoven.ai): http://localhost:5000/generate-music")
     print("- REAPER actions (Claude-powered): http://localhost:5000/reaper-action")
+    print("- Music generation (Beatoven.ai): http://localhost:5000/generate-music")
     print("\nAI Models:")
-    print("- OpenAI GPT-3.5-turbo: General chat, music generation detection, TTS")
+    print("- OpenAI GPT-3.5-turbo: General chat and TTS")
     print("- Claude Sonnet 4: REAPER DAW operations with advanced tool calling")
-    print("- Auto-routing: REAPER requests -> Claude, General chat -> OpenAI")
+    print("- Beatoven.ai: AI music generation with Pydantic structured parameters")
+    print("- Auto-routing: 'generate' -> Beatoven.ai, REAPER -> Claude, General -> OpenAI")
     
     # Start Flask server
     app.run(host='0.0.0.0', port=5000, debug=False)
