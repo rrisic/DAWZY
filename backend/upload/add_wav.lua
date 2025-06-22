@@ -1,7 +1,7 @@
 -- insert_moon.lua
 local info = debug.getinfo(1, "S")
 local script_path = info.source:match("@(.*[\\/])")
-local audio_file = script_path .. "moon.wav"
+local audio_file = script_path .. "beet.wav"
 
 reaper.SetEditCurPos(0, false, false)
 

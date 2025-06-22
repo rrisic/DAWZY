@@ -840,26 +840,72 @@ def generate_music_with_beatoven(music_request: MusicGenerationRequest) -> dict:
                 if audio_response.status_code != 200:
                     return {'success': False, 'error': 'Failed to download audio file'}
                 
-                # Save to generated_music folder
-                filename_base = create_filename_from_request(music_request)
-                output_filename = f"{filename_base}.wav"
-                output_dir = os.path.join(os.path.dirname(__file__), 'generated_music')
-                os.makedirs(output_dir, exist_ok=True)
-                output_path = os.path.join(output_dir, output_filename)
+                # Save to upload folder as beet.wav (always overwrites)
+                upload_dir = os.path.join(os.path.dirname(__file__), 'upload')
+                os.makedirs(upload_dir, exist_ok=True)
                 
-                with open(output_path, 'wb') as f:
+                # Always save as beet.wav
+                beet_filepath = os.path.join(upload_dir, 'beet.wav')
+                
+                # Check if file exists and log replacement
+                file_exists = os.path.exists(beet_filepath)
+                if file_exists:
+                    logger.info(f"Replacing existing beet.wav with new Beatoven.ai generation")
+                else:
+                    logger.info(f"Creating new beet.wav from Beatoven.ai generation")
+                
+                with open(beet_filepath, 'wb') as f:
                     f.write(audio_response.content)
                 
-                logger.info(f"Generated music saved: {output_path}")
+                logger.info(f"Successfully generated and saved music: {beet_filepath}")
                 
-                return {
-                    'success': True,
-                    'message': f'Generated music track: {output_filename}',
-                    'file_path': output_path,
-                    'filename': output_filename,
-                    'parameters': music_request.dict(),
-                    'prompt': beatoven_prompt
-                }
+                # Automatically add the WAV file to a new track using add_media_file
+                try:
+                    if reaper_controller:
+                        logger.info("Automatically adding generated WAV to REAPER...")
+                        
+                        # Create a track name based on the music parameters
+                        track_name = f"Beatoven_{music_request.genre}_{music_request.mood}"
+                        
+                        # Add the track first
+                        add_track_result = reaper_controller.add_track(track_name)
+                        logger.info(f"Add track result: {add_track_result}")
+                        
+                        # Add the WAV file to the new track
+                        add_media_result = reaper_controller.add_media_file("wav", track_name)
+                        logger.info(f"Add media result: {add_media_result}")
+                        
+                        return {
+                            'success': True,
+                            'filename': 'beet.wav',
+                            'filepath': beet_filepath,
+                            'prompt': beatoven_prompt,
+                            'parameters': music_request.dict(),
+                            'reaper_integration': {
+                                'track_created': add_track_result,
+                                'media_added': add_media_result
+                            }
+                        }
+                    else:
+                        logger.warning("REAPER controller not available - WAV saved but not added to REAPER")
+                        return {
+                            'success': True,
+                            'filename': 'beet.wav',
+                            'filepath': beet_filepath,
+                            'prompt': beatoven_prompt,
+                            'parameters': music_request.dict(),
+                            'reaper_integration': 'REAPER controller not available'
+                        }
+                except Exception as e:
+                    logger.error(f"Error adding WAV to REAPER: {e}")
+                    return {
+                        'success': True,
+                        'filename': 'beet.wav', 
+                        'filepath': beet_filepath,
+                        'prompt': beatoven_prompt,
+                        'parameters': music_request.dict(),
+                        'reaper_integration': f'Error adding to REAPER: {str(e)}'
+                    }
             
             elif status in ['failed', 'error']:
                 return {'success': False, 'error': f'Beatoven.ai composition failed: {status_data}'}
