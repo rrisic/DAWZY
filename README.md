@@ -1,114 +1,82 @@
-# DAWZY - Music Production Assistant
+## 🎶 DAWZY
+**A new paradigm for music creation**
 
-A modern music production assistant with voice interaction and audio recording capabilities.
+DAWZY is an AI-powered music assistant that connects to your DAW and brings your creative ideas to life, whether you speak them, type them, or hum them. From melody sketching to full track manipulation, DAWZY blends intelligent conversation with powerful DAW control to help anyone create the music they hear in their head.
 
-## Features
+### 💡Built at Berkeley's AI Hackathon 2025
 
-### 🎤 Voice Button
-- **Purpose**: Voice-to-text functionality for hands-free interaction with the AI assistant
-- **Current State**: Records audio and provides placeholder text (VAPI integration pending)
-- **Visual Feedback**: 
-  - Purple gradient when idle
-  - Red gradient with pulsing animation when recording
-  - Microphone icon that changes based on state
-  - Ping animation during recording
+### 🛠️ Built With
+- OpenAI API: Chat + voice-to-voice conversation
 
-### 🎵 Record Button (MIDI Conversion)
-- **Purpose**: Record humming, melodies, or other sounds for conversion to MIDI tracks
-- **Current State**: Records audio and sends to chat (MIDI conversion service pending)
-- **Visual Feedback**:
-  - Blue gradient when idle
-  - Red gradient with timer when recording
-  - Green gradient when ready to send
-  - Music note icon that changes to stop/send icons
-  - Recording timer display
-  - State labels ("Record MIDI", "Ready to send")
+- Claude AI: DAW scripting logic
 
-### 🎧 Audio Messages
-- **Purpose**: Display recorded audio files in the chat with playback controls
-- **Features**:
-  - Play/pause controls
-  - Progress bar with time display
-  - File name display
-  - Styled to match the chat interface
+- Beatoven.ai: AI music generation from prompts
 
-## Technical Implementation
+- Python (Flask): Backend server and DAW control
 
-### Components
-- `VoiceButton.jsx` - Handles voice recording and text conversion
-- `RecordButton.jsx` - Handles audio recording for MIDI conversion
-- `AudioMessage.jsx` - Displays audio files with playback controls
-- `ChatWindow.jsx` - Main chat interface with integrated buttons
+- React + Tailwind: Frontend chat UI and audio interface
 
-### Audio Recording
-- Uses Web Audio API and MediaRecorder
-- Supports multiple audio formats (WebM, WAV)
-- Automatic microphone permission handling
-- Error handling for unsupported browsers/devices
+- python-reapy: Live control over Reaper DAW
 
-### Future Integrations
-- **VAPI**: Voice-to-text conversion for the voice button
-- **MIDI Conversion**: Audio-to-MIDI conversion service for the record button
-- **Reaper Integration**: Automatic MIDI import into Reaper DAW
+- Web Audio API: Recording and playback in-browser
 
-## Development
+### 🎧 Why It Matters
+Making music is powerful, but modern DAWs can be intimidating. Many people never produce the melodies they imagine because the tools are complex, expensive, or inaccessible. DAWZY removes that barrier.
 
-### Running the App
-```bash
-# Install dependencies
-npm install
+Whether you’re a beginner with a melody in your head or a seasoned artist trying to iterate faster, DAWZY helps you move from idea to reality, effortlessly.
 
-# Start development server
-npm run dev
+### 🧠 What It Does
+##### DAWZY is your AI collaborator in the studio.
 
-# Run Electron app
-npm run electron-dev
-```
+- 🗣 Voice-to-Voice Chat: Talk to DAWZY like you would a co-producer. It listens, responds, and acts.
 
-### Project Structure
-```
-src/
-├── components/
-│   ├── ChatWindow.jsx      # Main chat interface
-│   ├── VoiceButton.jsx     # Voice recording component
-│   ├── RecordButton.jsx    # Audio recording component
-│   └── AudioMessage.jsx    # Audio playback component
-├── App.jsx                 # Root component
-└── index.css              # Styling and animations
-```
+- 🎵 Humming-to-MIDI: Hum a tune. DAWZY converts it into MIDI and plays it back with an instrument of your choice.
 
-## UI/UX Design
+- 📝 Prompt-Based Music Generation: Describe what you want - “lofi chill beat with piano” - and DAWZY builds it using Beatoven.
 
-### Design System
-- **Colors**: Purple, blue, and pink gradients
-- **Animations**: Smooth transitions, pulse, and ping effects
-- **Typography**: Inter font family
-- **Layout**: Glassmorphism effects with backdrop blur
+- 🎚 DAW Scripting via Language: Say “Add reverb to track 2” or “Increase the bass” — DAWZY generates scripts to modify your DAW.
 
-### Accessibility
-- Tooltips for all interactive elements
-- Keyboard navigation support
-- Screen reader friendly labels
-- High contrast color schemes
+- 🧠 Session Memory: DAWZY remembers context from your conversation and your DAW.
 
-## Browser Compatibility
+### 💬 Interaction Modes
+#### 🔊 Voice Button
 
-### Required APIs
-- MediaRecorder API
-- getUserMedia API
-- Web Audio API
-- File API
+Start a conversation with the DAWZY AI assistant using your mic
 
-### Supported Browsers
-- Chrome 66+
-- Firefox 60+
-- Safari 14+
-- Edge 79+
+#### 🎙️ Record Button
+Hum or sing a melody
+- Converts to MIDI for easy DAW integration
 
-## Next Steps
+- 🎧 Audio Chat Playback
+Messages with attached audio
 
-1. **VAPI Integration**: Replace placeholder text conversion with actual VAPI service
-2. **MIDI Conversion**: Implement audio-to-MIDI conversion backend service
-3. **Reaper Integration**: Add automatic MIDI import functionality
-4. **Audio Processing**: Add audio effects and processing capabilities
-5. **Multi-track Support**: Support for multiple simultaneous recordings 
+- Play/pause controls and progress bar
+
+### 🧪 Prototype Demo
+⚡ *[Check out our demo video!](https://www.youtube.com)* (coming soon)
+
+DAWZY currently works with Reaper DAW and supports:
+- 🗣 Voice and text chat
+
+- 🎛 Live DAW editing
+
+- 🎵 Melody-to-MIDI conversion
+
+- 🎼 Music generation via prompt
+
+- 🎙 Interactive audio buttons and playback
+
+### 🪄 What's Next
+- 🌍 Support for Ableton, Logic, FL Studio
+
+- 🧵 Real-time looping and jamming
+
+- 🎚 Plugin/effect chain suggestions
+
+- 🗣️ Full VAPI voice pipeline
+
+- ⏱️ Faster, local MIDI preview generation
+
+### 🤝 Team
+Built with creativity by Ryder Risic, Sanchit Singh, Peter Ma, Sawyer Blankenship
+🚀 Berkeley's AI Hackathon 2025 Submission
