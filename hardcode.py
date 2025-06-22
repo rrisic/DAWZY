@@ -1162,10 +1162,16 @@ class ReaperController:
             return "Error: Claude API not configured"
         
         try:
+            # Always get current track context first
+            track_context = self.list_tracks()
+            
+            # Provide context to Claude upfront
+            context_message = f"Current REAPER project state:\n{track_context}\n\nUser request: {user_query}"
+            
             messages = [
                 {
                     "role": "user",
-                    "content": user_query
+                    "content": context_message
                 }
             ]
             
