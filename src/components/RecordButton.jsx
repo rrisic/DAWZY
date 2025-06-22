@@ -69,6 +69,54 @@ const RecordButton = ({ onAudioRecorded, disabled = false, maxDuration = 5 }) =>
           onAudioRecorded(file)
         }
 
+        // Call transcribe endpoint for MIDI conversion
+        try {
+          console.log('Sending audio to transcribe endpoint for MIDI conversion...')
+          
+          // Convert blob to base64
+          const reader = new FileReader()
+          const base64Promise = new Promise((resolve) => {
+            reader.onload = () => {
+              const base64Audio = reader.result.split(',')[1] // Remove data URL prefix
+              resolve(base64Audio)
+            }
+          })
+          reader.readAsDataURL(wavBlob)
+          const base64Audio = await base64Promise
+
+          // Send to backend for transcription and MIDI conversion
+          const response = await fetch('http://localhost:5000/transcribe', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              audio: base64Audio
+            })
+          })
+
+          const result = await response.json()
+          
+          if (result.success) {
+            console.log('Transcribe endpoint response:', result)
+            if (result.midi_conversion) {
+              if (result.midi_conversion.success) {
+                console.log('MIDI conversion successful:', result.midi_conversion.message)
+                alert(`Recording processed! ${result.midi_conversion.message}`)
+              } else {
+                console.error('MIDI conversion failed:', result.midi_conversion.error)
+                alert(`MIDI conversion failed: ${result.midi_conversion.error}`)
+              }
+            }
+          } else {
+            console.error('Transcribe endpoint failed:', result.error)
+            alert(`Processing failed: ${result.error}`)
+          }
+        } catch (error) {
+          console.error('Error calling transcribe endpoint:', error)
+          alert('Failed to process recording for MIDI conversion')
+        }
+
         // stop mic
         stream.getTracks().forEach(t => t.stop())
 

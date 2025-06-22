@@ -407,7 +407,63 @@ def transcribe_audio():
         # Decode base64 audio
         audio_data = base64.b64decode(data['audio'])
         
-        # Create temporary file
+        # Save recording as Melody.wav (always overwrites)
+        recordings_dir = os.path.join(os.path.dirname(__file__), '..', 'recordings')
+        os.makedirs(recordings_dir, exist_ok=True)
+        melody_path = os.path.join(recordings_dir, 'Melody.wav')
+        
+        # Check if file exists and log replacement
+        file_exists = os.path.exists(melody_path)
+        if file_exists:
+            logger.info(f"Replacing existing Melody.wav with new recording")
+        else:
+            logger.info(f"Creating new Melody.wav recording")
+        
+        # Save the audio data to Melody.wav (overwrites if exists)
+        with open(melody_path, 'wb') as melody_file:
+            melody_file.write(audio_data)
+        
+        logger.info(f"Successfully saved recording as: {melody_path}")
+        
+        # Process audio to MIDI using ngrok (like hum.py)
+        logger.info("Processing audio to MIDI via ngrok...")
+        midi_result = None
+        try:
+            # Your ngrok URL (from hum.py)
+            ngrok_url = 'http://panda-humble-amoeba.ngrok-free.app/transcribe'
+            
+            # Send the file to ngrok
+            with open(melody_path, 'rb') as f:
+                files = {'file': f}
+                response = requests.post(ngrok_url, files=files)
+            
+            if response.status_code == 200:
+                # Save the response content (MIDI file) to the backend directory
+                backend_dir = os.path.dirname(__file__)
+                midi_output_path = os.path.join(backend_dir, 'transcribed.mid')
+                with open(midi_output_path, 'wb') as out_file:
+                    out_file.write(response.content)
+                
+                logger.info(f"MIDI file downloaded and saved as: {midi_output_path}")
+                midi_result = {
+                    "success": True,
+                    "midi_path": midi_output_path,
+                    "message": f"MIDI file saved as: {os.path.basename(midi_output_path)}"
+                }
+            else:
+                logger.error(f"Failed to get MIDI file. Status Code: {response.status_code}, Response: {response.text}")
+                midi_result = {
+                    "success": False,
+                    "error": f"Failed to convert audio to MIDI. Status: {response.status_code}"
+                }
+        except Exception as e:
+            logger.error(f"Audio to MIDI conversion error: {e}")
+            midi_result = {
+                "success": False,
+                "error": str(e)
+            }
+        
+        # Create temporary file for transcription processing
         with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_file:
             temp_file.write(audio_data)
             temp_file_path = temp_file.name
@@ -428,10 +484,18 @@ def transcribe_audio():
             
             logger.info(f"Transcription successful: {transcript}")
             
-            return jsonify({
+            # Prepare response with both transcription and MIDI conversion results
+            response_data = {
                 'success': True,
-                'transcript': transcript
-            })
+                'transcript': transcript,
+                'saved_as': 'Melody.wav'
+            }
+            
+            # Add MIDI conversion results
+            if midi_result:
+                response_data['midi_conversion'] = midi_result
+            
+            return jsonify(response_data)
             
         finally:
             # Clean up temporary file

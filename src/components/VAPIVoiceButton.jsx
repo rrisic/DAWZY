@@ -41,39 +41,12 @@ const VAPIVoiceButton = ({ onVoiceModeChange, onVoiceResponse, disabled = false 
         // Create audio blob
         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' })
         
-        // Convert to base64 for sending to backend
-        const reader = new FileReader()
-        reader.onload = async () => {
-          const base64Audio = reader.result.split(',')[1] // Remove data URL prefix
-          
-          try {
-            // Send to backend for transcription
-            const response = await fetch('http://localhost:5000/transcribe', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                audio: base64Audio
-              })
-            })
-            
-            const result = await response.json()
-            
-            if (result.success && result.transcript) {
-              console.log('Transcribed text:', result.transcript)
-              onVoiceResponse(result.transcript)
-            } else {
-              console.error('Transcription failed:', result.error)
-              alert('Failed to transcribe audio. Please try again.')
-            }
-          } catch (error) {
-            console.error('Error sending audio to backend:', error)
-            alert('Failed to send audio for transcription. Please try again.')
-          }
-        }
+        // For now, just log that audio was recorded since this button shouldn't call transcribe
+        console.log('VAPI Voice button audio recorded, but not sending to transcribe endpoint')
         
-        reader.readAsDataURL(audioBlob)
+        // In the future, this could integrate with VAPI or another voice service
+        // For now, just provide a placeholder response
+        onVoiceResponse("Voice input detected - VAPI integration not connected to transcribe endpoint")
       }
       
       // Start recording

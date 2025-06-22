@@ -192,12 +192,19 @@ ipcMain.handle('get-backend-status', async () => {
 // Save audio file to recordings directory
 ipcMain.handle('save-audio-file', async (event, buffer, filename) => {
   try {
-    // Increment counter and create sequential filename
-    melodyCounter++
-    const safeFilename = `Melody_${melodyCounter}.wav`
+    // Always save as Melody.wav, overwriting any existing file
+    const safeFilename = 'Melody.wav'
     const filePath = path.join(recordingsDir, safeFilename)
     
-    // Write the file
+    // Check if file exists and log replacement
+    const fileExists = fs.existsSync(filePath)
+    if (fileExists) {
+      console.log(`Replacing existing Melody.wav with new recording`)
+    } else {
+      console.log(`Creating new Melody.wav recording`)
+    }
+    
+    // Write the file (overwrites if exists)
     fs.writeFileSync(filePath, buffer)
     
     console.log(`Audio file saved: ${filePath}`)
