@@ -314,23 +314,61 @@ class ReaperController:
             },
             {
                 "name": "add_multiple_notes",
-                "description": "Add multiple MIDI notes to a track at once. Use this to add several notes in one operation.",
+                "description": "Add multiple MIDI notes to a track at once using a structured format",
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "track_identifier": {
-                            "type": "string",
-                            "description": "Track name or index"
-                        },
-                        "note_data": {
-                            "type": "string",
-                            "description": "Comma-separated note data in format: 'pitch,start,end,velocity|pitch,start,end,velocity|...' where pitch=0-127, start/end=seconds, velocity=0-127 (optional, default 100). Example: '60,0,1,100|64,1,2,100|67,2,3,100' for C4, E4, G4 notes"
-                        }
+                        "track_identifier": {"type": "string", "description": "Track name or number"},
+                        "note_data": {"type": "string", "description": "Note data in format: 'start:end:pitch:velocity,start:end:pitch:velocity,...'"}
                     },
                     "required": ["track_identifier", "note_data"]
                 }
+            },
+            {
+                "name": "add_media_file",
+                "description": "Add a .wav or .mid file to REAPER using predefined lua scripts",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "file_type": {"type": "string", "description": "Type of file: 'wav' or 'mid'", "enum": ["wav", "mid"]},
+                        "track_name": {"type": "string", "description": "Name of the track to upload the file to. If not provided, uses the topmost track."}
+                    },
+                    "required": ["file_type"]
+                }
+            },
+            {
+                "name": "mute_track",
+                "description": "Mute a track",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "track_identifier": {"type": "string", "description": "Track name or index to mute"}
+                    },
+                    "required": ["track_identifier"]
+                }
+            },
+            {
+                "name": "unmute_track",
+                "description": "Unmute a track",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "track_identifier": {"type": "string", "description": "Track name or index to unmute"}
+                    },
+                    "required": ["track_identifier"]
+                }
+            },
+            {
+                "name": "get_track_mute_status",
+                "description": "Check if a track is muted or not",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "track_identifier": {"type": "string", "description": "Track name or index to check mute status"}
+                    },
+                    "required": ["track_identifier"]
+                }
             }
-            
         ]
     
     def setup_claude(self):
@@ -887,7 +925,7 @@ class ReaperController:
             return f"Error transposing notes: {str(e)}"
     
     def add_multiple_notes(self, track_identifier: str, note_data: str) -> str:
-        """Add multiple MIDI notes to a track at once using string format"""
+        """Add multiple MIDI notes to a track at once using a structured format"""
         if not project:
             return "Error: Not connected to REAPER"
         
@@ -980,6 +1018,119 @@ class ReaperController:
             
         except Exception as e:
             return f"Error adding multiple notes: {str(e)}"
+    
+    def add_media_file(self, file_type: str, track_name: str = None) -> str:
+        """Add a .wav or .mid file to REAPER using predefined lua scripts"""
+        if not project:
+            return "Error: Not connected to REAPER"
+        
+        try:
+            # Find and select the target track
+            target_track = None
+            
+            if track_name:
+                # Find track by name
+                target_track = self._find_track(track_name)
+                if not target_track:
+                    return f"Track '{track_name}' not found"
+            else:
+                # Use topmost track (first track)
+                if len(project.tracks) > 0:
+                    target_track = project.tracks[0]
+                else:
+                    return "No tracks found in project"
+            
+            # Unselect all tracks and select only the target track
+            target_track.make_only_selected_track()
+            logger.info(f"Selected track '{target_track.name}' (unselected all others) for media upload")
+            
+            # Define action IDs for the lua scripts
+            action_ids = {
+                'mid': '_RS9eed0747a832953de8db469810dfad2882179a12',  # add_mid.lua
+                'wav': '_RS65ff619a466f8e5b9bba9e3924c57743b9515583'   # add_wav.lua
+            }
+            
+            # Validate file type
+            if file_type.lower() not in action_ids:
+                return f"Unsupported file type: {file_type}. Supported types: wav, mid"
+            
+            # Get the appropriate action ID
+            action_id = action_ids[file_type.lower()]
+            
+            # Execute the REAPER action
+            logger.info(f"Executing REAPER action {action_id} to add {file_type} file to track '{target_track.name}'")
+            project.perform_action(reapy.get_command_id(action_id))
+            
+            logger.info(f"Successfully executed action to add {file_type} file to track '{target_track.name}'")
+            return f"Successfully added {file_type.upper()} file to track '{target_track.name}' using lua script"
+            
+        except Exception as e:
+            return f"Error adding {file_type} file to REAPER: {str(e)}"
+    
+    def mute_track(self, track_identifier: str) -> str:
+        """Mute a track"""
+        if not project:
+            return "Error: Not connected to REAPER"
+        
+        try:
+            # Find track
+            track = self._find_track(track_identifier)
+            if not track:
+                return f"Track '{track_identifier}' not found"
+            
+            # Check if already muted
+            if track.is_muted:
+                return f"Track '{track.name}' is already muted"
+            
+            # Mute the track
+            track.mute()
+            logger.info(f"Muted track '{track.name}'")
+            return f"Successfully muted track '{track.name}'"
+            
+        except Exception as e:
+            return f"Error muting track: {str(e)}"
+    
+    def unmute_track(self, track_identifier: str) -> str:
+        """Unmute a track"""
+        if not project:
+            return "Error: Not connected to REAPER"
+        
+        try:
+            # Find track
+            track = self._find_track(track_identifier)
+            if not track:
+                return f"Track '{track_identifier}' not found"
+            
+            # Check if already unmuted
+            if not track.is_muted:
+                return f"Track '{track.name}' is already unmuted"
+            
+            # Unmute the track
+            track.unmute()
+            logger.info(f"Unmuted track '{track.name}'")
+            return f"Successfully unmuted track '{track.name}'"
+            
+        except Exception as e:
+            return f"Error unmuting track: {str(e)}"
+    
+    def get_track_mute_status(self, track_identifier: str) -> str:
+        """Check if a track is muted or not"""
+        if not project:
+            return "Error: Not connected to REAPER"
+        
+        try:
+            # Find track
+            track = self._find_track(track_identifier)
+            if not track:
+                return f"Track '{track_identifier}' not found"
+            
+            # Check mute status
+            mute_status = "muted" if track.is_muted else "unmuted"
+            logger.info(f"Track '{track.name}' is {mute_status}")
+            return f"Track '{track.name}' is {mute_status}"
+            
+        except Exception as e:
+            return f"Error checking track mute status: {str(e)}"
     
     def _convert_formatted_to_param_value(self, param, target_formatted_value: float) -> float:
         """Convert a formatted value (like 3000ms) to the actual parameter value (like 0.2)"""
@@ -1145,6 +1296,17 @@ class ReaperController:
                     arguments["track_identifier"],
                     arguments["note_data"]
                 )
+            elif tool_name == "add_media_file":
+                return self.add_media_file(
+                    arguments["file_type"],
+                    arguments.get("track_name")
+                )
+            elif tool_name == "mute_track":
+                return self.mute_track(arguments["track_identifier"])
+            elif tool_name == "unmute_track":
+                return self.unmute_track(arguments["track_identifier"])
+            elif tool_name == "get_track_mute_status":
+                return self.get_track_mute_status(arguments["track_identifier"])
             else:
                 return f"Unknown tool: {tool_name}"
                 

@@ -69,9 +69,9 @@ const RecordButton = ({ onAudioRecorded, disabled = false, maxDuration = 5 }) =>
           onAudioRecorded(file)
         }
 
-        // Call transcribe endpoint for MIDI conversion
+        // Call convert-to-midi endpoint for MIDI conversion
         try {
-          console.log('Sending audio to transcribe endpoint for MIDI conversion...')
+          console.log('Sending audio to convert-to-midi endpoint for MIDI conversion...')
           
           // Convert blob to base64
           const reader = new FileReader()
@@ -84,8 +84,8 @@ const RecordButton = ({ onAudioRecorded, disabled = false, maxDuration = 5 }) =>
           reader.readAsDataURL(wavBlob)
           const base64Audio = await base64Promise
 
-          // Send to backend for transcription and MIDI conversion
-          const response = await fetch('http://localhost:5000/transcribe', {
+          // Send to backend for MIDI conversion only
+          const response = await fetch('http://localhost:5000/convert-to-midi', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -98,7 +98,7 @@ const RecordButton = ({ onAudioRecorded, disabled = false, maxDuration = 5 }) =>
           const result = await response.json()
           
           if (result.success) {
-            console.log('Transcribe endpoint response:', result)
+            console.log('Convert-to-MIDI endpoint response:', result)
             if (result.midi_conversion) {
               if (result.midi_conversion.success) {
                 console.log('MIDI conversion successful:', result.midi_conversion.message)
@@ -109,11 +109,11 @@ const RecordButton = ({ onAudioRecorded, disabled = false, maxDuration = 5 }) =>
               }
             }
           } else {
-            console.error('Transcribe endpoint failed:', result.error)
+            console.error('Convert-to-MIDI endpoint failed:', result.error)
             alert(`Processing failed: ${result.error}`)
           }
         } catch (error) {
-          console.error('Error calling transcribe endpoint:', error)
+          console.error('Error calling convert-to-midi endpoint:', error)
           alert('Failed to process recording for MIDI conversion')
         }
 

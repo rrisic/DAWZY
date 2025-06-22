@@ -235,7 +235,9 @@ def detect_reaper_action(message: str) -> bool:
         
         # REAPER-specific terms
         'reaper', 'daw', 'project', 'session', 'timeline',
-        'automation', 'routing', 'send', 'bus'
+        'automation', 'routing', 'send', 'bus',
+
+        'edit'
     ]
     
     # Check for any REAPER keywords
@@ -398,7 +400,52 @@ def parse_music_generation_request(message: str) -> MusicGenerationRequest:
 
 @app.route('/transcribe', methods=['POST'])
 def transcribe_audio():
-    """Transcribe audio using OpenAI Whisper"""
+    """Transcribe audio using OpenAI Whisper (voice input only)"""
+    try:
+        data = request.get_json()
+        if not data or 'audio' not in data:
+            return jsonify({'success': False, 'error': 'No audio data provided'})
+        
+        # Decode base64 audio
+        audio_data = base64.b64decode(data['audio'])
+        
+        # Create temporary file for transcription processing
+        with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_file:
+            temp_file.write(audio_data)
+            temp_file_path = temp_file.name
+        
+        try:
+            # Transcribe using OpenAI Whisper
+            if not OpenAI:
+                return jsonify({'success': False, 'error': 'OpenAI not available'})
+            
+            client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+            
+            with open(temp_file_path, 'rb') as audio_file:
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    response_format="text"
+                )
+            
+            logger.info(f"Voice transcription successful: {transcript}")
+            
+            return jsonify({
+                'success': True,
+                'transcript': transcript
+            })
+            
+        finally:
+            # Clean up temporary file
+            os.unlink(temp_file_path)
+            
+    except Exception as e:
+        logger.error(f"Transcription error: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/convert-to-midi', methods=['POST'])
+def convert_to_midi():
+    """Convert audio to MIDI (record button only)"""
     try:
         data = request.get_json()
         if not data or 'audio' not in data:
@@ -427,7 +474,6 @@ def transcribe_audio():
         
         # Process audio to MIDI using ngrok (like hum.py)
         logger.info("Processing audio to MIDI via ngrok...")
-        midi_result = None
         try:
             # Your ngrok URL (from hum.py)
             ngrok_url = 'http://panda-humble-amoeba.ngrok-free.app/transcribe'
@@ -445,64 +491,32 @@ def transcribe_audio():
                     out_file.write(response.content)
                 
                 logger.info(f"MIDI file downloaded and saved as: {midi_output_path}")
-                midi_result = {
-                    "success": True,
-                    "midi_path": midi_output_path,
-                    "message": f"MIDI file saved as: {os.path.basename(midi_output_path)}"
-                }
+                
+                return jsonify({
+                    'success': True,
+                    'saved_as': 'Melody.wav',
+                    'midi_conversion': {
+                        'success': True,
+                        'midi_path': midi_output_path,
+                        'message': f"MIDI file saved as: {os.path.basename(midi_output_path)}"
+                    }
+                })
             else:
                 logger.error(f"Failed to get MIDI file. Status Code: {response.status_code}, Response: {response.text}")
-                midi_result = {
-                    "success": False,
-                    "error": f"Failed to convert audio to MIDI. Status: {response.status_code}"
-                }
+                return jsonify({
+                    'success': False,
+                    'error': f"Failed to convert audio to MIDI. Status: {response.status_code}"
+                })
+                
         except Exception as e:
             logger.error(f"Audio to MIDI conversion error: {e}")
-            midi_result = {
-                "success": False,
-                "error": str(e)
-            }
-        
-        # Create temporary file for transcription processing
-        with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as temp_file:
-            temp_file.write(audio_data)
-            temp_file_path = temp_file.name
-        
-        try:
-            # Transcribe using OpenAI Whisper
-            if not OpenAI:
-                return jsonify({'success': False, 'error': 'OpenAI not available'})
-            
-            client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-            
-            with open(temp_file_path, 'rb') as audio_file:
-                transcript = client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    response_format="text"
-                )
-            
-            logger.info(f"Transcription successful: {transcript}")
-            
-            # Prepare response with both transcription and MIDI conversion results
-            response_data = {
-                'success': True,
-                'transcript': transcript,
-                'saved_as': 'Melody.wav'
-            }
-            
-            # Add MIDI conversion results
-            if midi_result:
-                response_data['midi_conversion'] = midi_result
-            
-            return jsonify(response_data)
-            
-        finally:
-            # Clean up temporary file
-            os.unlink(temp_file_path)
+            return jsonify({
+                'success': False,
+                'error': str(e)
+            })
             
     except Exception as e:
-        logger.error(f"Transcription error: {e}")
+        logger.error(f"MIDI conversion error: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/tts', methods=['POST'])
