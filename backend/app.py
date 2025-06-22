@@ -484,13 +484,25 @@ def convert_to_midi():
                 response = requests.post(ngrok_url, files=files)
             
             if response.status_code == 200:
-                # Save the response content (MIDI file) to the backend directory
+                # Save the response content (MIDI file) to the upload directory
                 backend_dir = os.path.dirname(__file__)
-                midi_output_path = os.path.join(backend_dir, 'transcribed.mid')
+                upload_dir = os.path.join(backend_dir, 'upload')
+                midi_output_path = os.path.join(upload_dir, 'transcribed.mid')
                 with open(midi_output_path, 'wb') as out_file:
                     out_file.write(response.content)
                 
                 logger.info(f"MIDI file downloaded and saved as: {midi_output_path}")
+                
+                # Automatically add the MIDI file to the currently selected track in REAPER
+                add_media_result = None
+                if reaper_controller:
+                    try:
+                        logger.info("Automatically adding MIDI file to REAPER...")
+                        add_media_result = reaper_controller.add_media_file("mid")
+                        logger.info(f"Add media result: {add_media_result}")
+                    except Exception as e:
+                        logger.error(f"Failed to automatically add MIDI to REAPER: {e}")
+                        add_media_result = f"Error: {str(e)}"
                 
                 return jsonify({
                     'success': True,
@@ -498,7 +510,8 @@ def convert_to_midi():
                     'midi_conversion': {
                         'success': True,
                         'midi_path': midi_output_path,
-                        'message': f"MIDI file saved as: {os.path.basename(midi_output_path)}"
+                        'message': f"MIDI file saved as: {os.path.basename(midi_output_path)}",
+                        'reaper_import': add_media_result
                     }
                 })
             else:

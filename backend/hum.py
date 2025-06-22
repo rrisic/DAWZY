@@ -11,7 +11,7 @@ with open(file_path, 'rb') as f:
 print("Response Text:", response.text)
 if response.status_code == 200:
     # Save the response content to a file
-    output_path = 'transcribed.mid'
+    output_path = 'upload/transcribed.mid'
     with open(output_path, 'wb') as out_file:
         out_file.write(response.content)
     print(f":white_check_mark: MIDI file downloaded and saved as: {output_path}")

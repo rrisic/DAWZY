@@ -6,3 +6,6 @@ local audio_file = script_path .. "beet.wav"
 reaper.SetEditCurPos(0, false, false)
 
 reaper.InsertMedia(audio_file, 0)
+
+reaper.SetEditCurPos(0, false, false)
+

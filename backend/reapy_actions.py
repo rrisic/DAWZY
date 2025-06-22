@@ -331,7 +331,7 @@ class ReaperController:
                     "type": "object",
                     "properties": {
                         "file_type": {"type": "string", "description": "Type of file: 'wav' or 'mid'", "enum": ["wav", "mid"]},
-                        "track_name": {"type": "string", "description": "Name of the track to upload the file to. If not provided, uses the topmost track."}
+                        "track_name": {"type": "string", "description": "Name of the track to upload the file to. If not provided, uses the currently selected track, or the first track if none selected."}
                     },
                     "required": ["file_type"]
                 }
@@ -1034,9 +1034,14 @@ class ReaperController:
                 if not target_track:
                     return f"Track '{track_name}' not found"
             else:
-                # Use topmost track (first track)
-                if len(project.tracks) > 0:
-                    target_track = project.tracks[0]
+                # Use currently selected track, or first track if none selected
+                selected_tracks = [track for track in project.tracks if track.is_selected]
+                if selected_tracks:
+                    target_track = selected_tracks[0]  # Use first selected track
+                    logger.info(f"Using currently selected track: '{target_track.name}'")
+                elif len(project.tracks) > 0:
+                    target_track = project.tracks[0]  # Fallback to first track
+                    logger.info(f"No track selected, using first track: '{target_track.name}'")
                 else:
                     return "No tracks found in project"
             
