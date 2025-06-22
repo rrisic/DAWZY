@@ -3,6 +3,7 @@ import VoiceButton from './VoiceButton'
 import RecordButton from './RecordButton'
 import AudioMessage from './AudioMessage'
 import AIVoiceResponse from './AIVoiceResponse'
+import MusicGenerationResult from './MusicGenerationResult'
 
 const ChatWindow = () => {
   const [messages, setMessages] = useState([
@@ -111,6 +112,7 @@ const ChatWindow = () => {
           id: Date.now() + 1,
           text: result.response,
           audio: result.audio,
+          musicGeneration: result.music_generation,
           sender: 'ai',
           success: true
         }])
@@ -185,13 +187,28 @@ const ChatWindow = () => {
     // For AI messages with audio, use AIVoiceResponse
     if (message.sender === 'ai' && message.audio) {
       return (
-        <AIVoiceResponse 
-          text={message.text}
-          audioBase64={message.audio}
-          messageId={message.id}
-          onPlayStart={() => console.log('AI voice started playing')}
-          onPlayEnd={() => console.log('AI voice finished playing')}
-        />
+        <div>
+          <AIVoiceResponse 
+            text={message.text}
+            audioBase64={message.audio}
+            messageId={message.id}
+            onPlayStart={() => console.log('AI voice started playing')}
+            onPlayEnd={() => console.log('AI voice finished playing')}
+          />
+          {message.musicGeneration && (
+            <MusicGenerationResult musicGeneration={message.musicGeneration} />
+          )}
+        </div>
+      )
+    }
+    
+    // For AI messages without audio but with music generation
+    if (message.sender === 'ai' && message.musicGeneration) {
+      return (
+        <div>
+          <div>{message.text}</div>
+          <MusicGenerationResult musicGeneration={message.musicGeneration} />
+        </div>
       )
     }
     
