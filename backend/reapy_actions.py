@@ -236,7 +236,7 @@ class ReaperController:
             },
             {
                 "name": "add_note_to_track",
-                "description": "Add a MIDI note to the active MIDI item on a track",
+                "description": "Add a single MIDI note to the active MIDI item on a track. For multiple notes, use add_multiple_notes instead for better efficiency.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -314,12 +314,12 @@ class ReaperController:
             },
             {
                 "name": "add_multiple_notes",
-                "description": "Add multiple MIDI notes to a track at once using a structured format",
+                "description": "PREFERRED method for adding 2 or more MIDI notes to a track at once. Much more efficient than calling add_note_to_track multiple times. Use this whenever you need to add multiple notes.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
                         "track_identifier": {"type": "string", "description": "Track name or number"},
-                        "note_data": {"type": "string", "description": "Note data in format: 'start:end:pitch:velocity,start:end:pitch:velocity,...'"}
+                        "note_data": {"type": "string", "description": "Note data in format: 'pitch,start,end,velocity|pitch,start,end,velocity|...' where each note is separated by | and values are separated by commas. Velocity is optional (defaults to 100). Example: '60,0,1,100|64,1,2,100|67,2,3' adds 3 notes."}
                     },
                     "required": ["track_identifier", "note_data"]
                 }

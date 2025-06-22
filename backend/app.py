@@ -220,7 +220,7 @@ def detect_reaper_action(message: str) -> bool:
     reaper_keywords = [
         # Track operations
         'add track', 'create track', 'new track', 'delete track', 'remove track',
-        'list tracks', 'show tracks', 'track named', 'track called',
+        'list tracks', 'show tracks', 'track named', 'track called', 'delete',
         
         # FX operations  
         'add fx', 'add effect', 'add plugin', 'remove fx', 'remove effect',
