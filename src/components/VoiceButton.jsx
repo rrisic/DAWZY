@@ -58,12 +58,40 @@ const VoiceButton = ({ onVoiceInput, disabled = false }) => {
 
   const convertAudioToText = async (audioBlob) => {
     try {
-      // For now, return placeholder text since we don't want this button to call transcribe
-      // In the future, this could use local speech recognition or a different service
-      console.log('Voice button audio recorded, but not sending to transcribe endpoint')
-      return "Voice input detected - transcription service not connected to this button"
+      // Convert blob to base64
+      const reader = new FileReader()
+      const base64Promise = new Promise((resolve) => {
+        reader.onload = () => {
+          const base64Audio = reader.result.split(',')[1] // Remove data URL prefix
+          resolve(base64Audio)
+        }
+      })
+      reader.readAsDataURL(audioBlob)
+      const base64Audio = await base64Promise
+
+      // Send to backend for transcription
+      const response = await fetch('http://localhost:5000/transcribe', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          audio: base64Audio
+        })
+      })
+
+      const result = await response.json()
+
+      if (result.success && result.transcript) {
+        console.log('Voice button - Transcribed text:', result.transcript)
+        // Voice button only cares about the transcript for chat input, not MIDI conversion
+        return result.transcript
+      } else {
+        console.error('Voice button - Transcription failed:', result.error)
+        return null
+      }
     } catch (error) {
-      console.error('Error in voice processing:', error)
+      console.error('Voice button - Error sending audio to backend:', error)
       return null
     }
   }
