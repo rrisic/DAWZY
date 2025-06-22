@@ -209,6 +209,126 @@ class ReaperController:
                     },
                     "required": ["track_identifier", "fx_index", "param_index", "operation", "value"]
                 }
+            },
+            {
+                "name": "add_midi_item",
+                "description": "Add a MIDI item to a track",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "track_identifier": {
+                            "type": "string",
+                            "description": "Track name or index"
+                        },
+                        "start_time": {
+                            "type": "number",
+                            "description": "Start time of the MIDI item in seconds",
+                            "default": 0
+                        },
+                        "end_time": {
+                            "type": "number",
+                            "description": "End time of the MIDI item in seconds",
+                            "default": 4
+                        }
+                    },
+                    "required": ["track_identifier"]
+                }
+            },
+            {
+                "name": "add_note_to_track",
+                "description": "Add a MIDI note to the active MIDI item on a track",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "track_identifier": {
+                            "type": "string",
+                            "description": "Track name or index"
+                        },
+                        "start_time": {
+                            "type": "number",
+                            "description": "Note start time in seconds"
+                        },
+                        "end_time": {
+                            "type": "number",
+                            "description": "Note end time in seconds"
+                        },
+                        "pitch": {
+                            "type": "integer",
+                            "description": "MIDI pitch (0-127, where 60 = C4)"
+                        },
+                        "velocity": {
+                            "type": "integer",
+                            "description": "Note velocity (0-127)",
+                            "default": 100
+                        },
+                        "channel": {
+                            "type": "integer",
+                            "description": "MIDI channel (0-15)",
+                            "default": 0
+                        }
+                    },
+                    "required": ["track_identifier", "start_time", "end_time", "pitch"]
+                }
+            },
+            {
+                "name": "list_notes_on_track",
+                "description": "List all MIDI notes on a track",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "track_identifier": {
+                            "type": "string",
+                            "description": "Track name or index"
+                        },
+                        "item_index": {
+                            "type": "integer",
+                            "description": "Index of the MIDI item (0-based). If not specified, uses the first MIDI item",
+                            "default": 0
+                        }
+                    },
+                    "required": ["track_identifier"]
+                }
+            },
+            {
+                "name": "transpose_notes",
+                "description": "Transpose all notes on a track by a specified number of semitones",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "track_identifier": {
+                            "type": "string",
+                            "description": "Track name or index"
+                        },
+                        "semitones": {
+                            "type": "integer",
+                            "description": "Number of semitones to transpose (positive = up, negative = down, 12 = one octave)"
+                        },
+                        "item_index": {
+                            "type": "integer",
+                            "description": "Index of the MIDI item (0-based). If not specified, transposes all MIDI items",
+                            "default": -1
+                        }
+                    },
+                    "required": ["track_identifier", "semitones"]
+                }
+            },
+            {
+                "name": "add_multiple_notes",
+                "description": "Add multiple MIDI notes to a track at once. Use this to add several notes in one operation.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "track_identifier": {
+                            "type": "string",
+                            "description": "Track name or index"
+                        },
+                        "note_data": {
+                            "type": "string",
+                            "description": "Comma-separated note data in format: 'pitch,start,end,velocity|pitch,start,end,velocity|...' where pitch=0-127, start/end=seconds, velocity=0-127 (optional, default 100). Example: '60,0,1,100|64,1,2,100|67,2,3,100' for C4, E4, G4 notes"
+                        }
+                    },
+                    "required": ["track_identifier", "note_data"]
+                }
             }
             
         ]
@@ -548,6 +668,319 @@ class ReaperController:
             logger.error(f"Track: {track_identifier}, FX: {fx_index}, Param: {param_index}, Operation: {operation}, Value: {value}")
             return f"Error modifying FX parameter: {str(e)}"
     
+    def add_midi_item(self, track_identifier: str, start_time: float = 0, end_time: float = 4) -> str:
+        """Add a MIDI item to a track"""
+        if not project:
+            return "Error: Not connected to REAPER"
+        
+        try:
+            # Find track
+            track = self._find_track(track_identifier)
+            if not track:
+                return f"Track '{track_identifier}' not found"
+            
+            # Add MIDI item
+            midi_item = track.add_midi_item(start=start_time, end=end_time)
+            logger.info(f"Added MIDI item to track '{track.name}' from {start_time}s to {end_time}s")
+            return f"Successfully added MIDI item to track '{track.name}' from {start_time}s to {end_time}s"
+            
+        except Exception as e:
+            return f"Error adding MIDI item: {str(e)}"
+    
+    def add_note_to_track(self, track_identifier: str, start_time: float, end_time: float, 
+                         pitch: int, velocity: int = 100, channel: int = 0) -> str:
+        """Add a MIDI note to the active MIDI item on a track"""
+        if not project:
+            return "Error: Not connected to REAPER"
+        
+        try:
+            # Find track
+            track = self._find_track(track_identifier)
+            if not track:
+                return f"Track '{track_identifier}' not found"
+            
+            # Find MIDI items on track
+            midi_items = [item for item in track.items if item.active_take and item.active_take.is_midi]
+            if not midi_items:
+                return f"No MIDI items found on track '{track.name}'. Create a MIDI item first."
+            
+            # Use the first MIDI item (or you could specify which one)
+            midi_item = midi_items[0]
+            take = midi_item.active_take
+            
+            # Validate pitch range
+            if not (0 <= pitch <= 127):
+                return f"Invalid pitch {pitch}. Must be between 0 and 127."
+            
+            # Validate velocity range
+            if not (0 <= velocity <= 127):
+                return f"Invalid velocity {velocity}. Must be between 0 and 127."
+            
+            # Validate channel range
+            if not (0 <= channel <= 15):
+                return f"Invalid channel {channel}. Must be between 0 and 15."
+            
+            # Add note
+            take.add_note(
+                start=start_time,
+                end=end_time,
+                pitch=pitch,
+                velocity=velocity,
+                channel=channel
+            )
+            
+            # Convert pitch to note name for display
+            note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+            octave = (pitch // 12) - 1
+            note_name = note_names[pitch % 12] + str(octave)
+            
+            logger.info(f"Added note {note_name} (pitch {pitch}) to track '{track.name}'")
+            return f"Successfully added note {note_name} (pitch {pitch}) to track '{track.name}' from {start_time}s to {end_time}s"
+            
+        except Exception as e:
+            return f"Error adding note: {str(e)}"
+    
+    def list_notes_on_track(self, track_identifier: str, item_index: int = 0) -> str:
+        """List all MIDI notes on a track"""
+        if not project:
+            return "Error: Not connected to REAPER"
+        
+        try:
+            # Find track
+            track = self._find_track(track_identifier)
+            if not track:
+                return f"Track '{track_identifier}' not found"
+            
+            # Find MIDI items on track
+            midi_items = [item for item in track.items if item.active_take and item.active_take.is_midi]
+            if not midi_items:
+                return f"No MIDI items found on track '{track.name}'"
+            
+            if item_index >= len(midi_items):
+                return f"MIDI item index {item_index} out of range. Track has {len(midi_items)} MIDI items."
+            
+            midi_item = midi_items[item_index]
+            take = midi_item.active_take
+            
+            if not take.notes:
+                return f"No notes found in MIDI item {item_index} on track '{track.name}'"
+            
+            # Convert pitch to note name helper
+            def pitch_to_note_name(pitch):
+                note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+                octave = (pitch // 12) - 1
+                return note_names[pitch % 12] + str(octave)
+            
+            # List all notes
+            note_list = []
+            for i, note in enumerate(take.notes):
+                note_name = pitch_to_note_name(note.pitch)
+                note_info = f"{i}: {note_name} (pitch {note.pitch}) - {note.start:.2f}s to {note.end:.2f}s, vel {note.velocity}, ch {note.channel}"
+                note_list.append(note_info)
+            
+            result = f"Notes in MIDI item {item_index} on track '{track.name}':\n"
+            result += "\n".join(note_list)
+            return result
+            
+        except Exception as e:
+            return f"Error listing notes: {str(e)}"
+    
+    def transpose_notes(self, track_identifier: str, semitones: int, item_index: int = -1) -> str:
+        """Transpose all notes on a track by specified semitones"""
+        if not project:
+            return "Error: Not connected to REAPER"
+        
+        try:
+            # Find track
+            track = self._find_track(track_identifier)
+            if not track:
+                return f"Track '{track_identifier}' not found"
+            
+            # Find MIDI items on track
+            midi_items = [item for item in track.items if item.active_take and item.active_take.is_midi]
+            if not midi_items:
+                return f"No MIDI items found on track '{track.name}'"
+            
+            # Determine which items to transpose
+            items_to_process = []
+            if item_index == -1:
+                items_to_process = midi_items
+                item_desc = "all MIDI items"
+            else:
+                if item_index >= len(midi_items):
+                    return f"MIDI item index {item_index} out of range. Track has {len(midi_items)} MIDI items."
+                items_to_process = [midi_items[item_index]]
+                item_desc = f"MIDI item {item_index}"
+            
+            total_notes_transposed = 0
+            
+            for midi_item in items_to_process:
+                take = midi_item.active_take
+                
+                # Collect all note data before deleting
+                notes_data = []
+                for note in take.notes:
+                    # Get note information using the infos property for efficiency
+                    note_info = note.infos
+                    notes_data.append({
+                        'start': note_info['start'],
+                        'end': note_info['end'],
+                        'pitch': note_info['pitch'],
+                        'velocity': note_info['velocity'],
+                        'channel': note_info['channel'],
+                        'selected': note_info['selected'],
+                        'muted': note_info['muted']
+                    })
+                
+                # Clear all existing notes
+                # We need to delete notes in reverse order to avoid index shifting issues
+                for i in range(len(take.notes) - 1, -1, -1):
+                    take.notes[i].delete()
+                
+                # Add new notes with transposed pitch
+                for note_data in notes_data:
+                    new_pitch = note_data['pitch'] + semitones
+                    
+                    # Clamp to valid MIDI range (0-127)
+                    if new_pitch < 0:
+                        new_pitch = 0
+                    elif new_pitch > 127:
+                        new_pitch = 127
+                    
+                    # Add the transposed note
+                    take.add_note(
+                        start=note_data['start'],
+                        end=note_data['end'],
+                        pitch=new_pitch,
+                        velocity=note_data['velocity'],
+                        channel=note_data['channel'],
+                        selected=note_data['selected'],
+                        muted=note_data['muted'],
+                        sort=False  # Don't sort after each note for efficiency
+                    )
+                    total_notes_transposed += 1
+                
+                # Sort all notes at the end for efficiency
+                if notes_data:
+                    take.sort_events()
+            
+            # Describe the transposition
+            if semitones > 0:
+                direction = f"up {semitones} semitones"
+                if semitones == 12:
+                    direction = "up one octave"
+                elif semitones % 12 == 0:
+                    direction = f"up {semitones // 12} octaves"
+            elif semitones < 0:
+                direction = f"down {abs(semitones)} semitones"
+                if semitones == -12:
+                    direction = "down one octave"
+                elif semitones % 12 == 0:
+                    direction = f"down {abs(semitones) // 12} octaves"
+            else:
+                direction = "by 0 semitones (no change)"
+            
+            logger.info(f"Transposed {total_notes_transposed} notes {direction} on track '{track.name}'")
+            return f"Successfully transposed {total_notes_transposed} notes {direction} in {item_desc} on track '{track.name}'"
+            
+        except Exception as e:
+            return f"Error transposing notes: {str(e)}"
+    
+    def add_multiple_notes(self, track_identifier: str, note_data: str) -> str:
+        """Add multiple MIDI notes to a track at once using string format"""
+        if not project:
+            return "Error: Not connected to REAPER"
+        
+        try:
+            # Debug logging
+            logger.info(f"add_multiple_notes: track='{track_identifier}', note_data='{note_data}'")
+            
+            # Parse note data string
+            # Format: "pitch,start,end,velocity|pitch,start,end,velocity|..."
+            # Example: "60,0,1,100|64,1,2,100|67,2,3,100"
+            
+            if not note_data or not note_data.strip():
+                return "Error: note_data is empty"
+            
+            # Find track
+            track = self._find_track(track_identifier)
+            if not track:
+                return f"Track '{track_identifier}' not found"
+            
+            # Find MIDI items on track
+            midi_items = [item for item in track.items if item.active_take and item.active_take.is_midi]
+            if not midi_items:
+                return f"No MIDI items found on track '{track.name}'. Create a MIDI item first."
+            
+            # Use the first MIDI item
+            midi_item = midi_items[0]
+            take = midi_item.active_take
+            
+            # Parse notes from string
+            note_strings = note_data.split('|')
+            added_notes = []
+            
+            for i, note_str in enumerate(note_strings):
+                try:
+                    note_str = note_str.strip()
+                    if not note_str:
+                        continue
+                        
+                    # Split by comma: pitch,start,end,velocity (velocity optional)
+                    parts = note_str.split(',')
+                    
+                    if len(parts) < 3:
+                        return f"Invalid note format in note {i}: '{note_str}'. Expected format: 'pitch,start,end' or 'pitch,start,end,velocity'"
+                    
+                    # Parse components
+                    pitch = int(parts[0])
+                    start_time = float(parts[1])
+                    end_time = float(parts[2])
+                    velocity = int(parts[3]) if len(parts) > 3 else 100
+                    channel = 0  # Default channel
+                    
+                    # Validate ranges
+                    if not (0 <= pitch <= 127):
+                        return f"Invalid pitch {pitch} in note {i}. Must be between 0 and 127."
+                    if not (0 <= velocity <= 127):
+                        return f"Invalid velocity {velocity} in note {i}. Must be between 0 and 127."
+                    if end_time <= start_time:
+                        return f"Invalid timing in note {i}: end_time ({end_time}) must be greater than start_time ({start_time})."
+                    
+                    # Add note (with sort=False for efficiency)
+                    take.add_note(
+                        start=start_time,
+                        end=end_time,
+                        pitch=pitch,
+                        velocity=velocity,
+                        channel=channel,
+                        sort=False
+                    )
+                    
+                    # Convert pitch to note name for logging
+                    note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+                    octave = (pitch // 12) - 1
+                    note_name = note_names[pitch % 12] + str(octave)
+                    
+                    added_notes.append(f"{note_name} ({pitch})")
+                    
+                except ValueError as e:
+                    return f"Invalid number format in note {i}: '{note_str}'. Error: {e}"
+                except Exception as e:
+                    return f"Error processing note {i}: '{note_str}'. Error: {e}"
+            
+            if not added_notes:
+                return "No valid notes were parsed from the note_data"
+            
+            # Sort all notes at the end for efficiency
+            take.sort_events()
+            
+            logger.info(f"Added {len(added_notes)} notes to track '{track.name}'")
+            return f"Successfully added {len(added_notes)} notes to track '{track.name}': {', '.join(added_notes)}"
+            
+        except Exception as e:
+            return f"Error adding multiple notes: {str(e)}"
+    
     def _convert_formatted_to_param_value(self, param, target_formatted_value: float) -> float:
         """Convert a formatted value (like 3000ms) to the actual parameter value (like 0.2)"""
         try:
@@ -639,117 +1072,91 @@ class ReaperController:
     
     def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
         """Execute a tool function"""
-        if tool_name == "add_track":
-            return self.add_track(arguments["track_name"])
-        elif tool_name == "delete_track":
-            return self.delete_track(arguments["track_identifier"])
-        elif tool_name == "add_fx_to_track":
-            return self.add_fx_to_track(arguments["track_identifier"], arguments["fx_name"])
-        elif tool_name == "remove_fx_from_track":
-            return self.remove_fx_from_track(arguments["track_identifier"], arguments["fx_index"])
-        elif tool_name == "list_tracks":
-            return self.list_tracks()
-        elif tool_name == "list_fx_on_track":
-            return self.list_fx_on_track(arguments["track_identifier"])
-        elif tool_name == "inspect_fx_parameters":
-            return self.inspect_fx_parameters(arguments["track_identifier"], arguments["fx_index"])
-        elif tool_name == "set_fx_parameter":
-            return self.set_fx_parameter(
-                arguments["track_identifier"], 
-                arguments["fx_index"], 
-                arguments["param_index"], 
-                arguments["value"],
-                arguments.get("use_formatted", False)
-            )
-        elif tool_name == "modify_fx_parameter":
-            return self.modify_fx_parameter(
-                arguments["track_identifier"], 
-                arguments["fx_index"], 
-                arguments["param_index"], 
-                arguments["operation"],
-                arguments["value"]
-            )
-        else:
-            return f"Unknown tool: {tool_name}"
-    
-    def process_query(self, user_query: str) -> str:
-        """Process user query using Claude API with tool calls"""
-        if not self.client:
-            return "Error: Claude API not configured"
-        
         try:
-            # Initial message to Claude
-            messages = [
-                {
-                    "role": "user",
-                    "content": user_query
-                }
-            ]
+            logger.info(f"Executing tool '{tool_name}' with arguments: {arguments}")
             
-            # Get response from Claude
-            response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=1000,
-                tools=self.tools,
-                messages=messages
-            )
-            
-            # Process tool calls
-            results = []
-            tool_results = []
-            
-            for content in response.content:
-                if content.type == "tool_use":
-                    tool_name = content.name
-                    tool_args = content.input
-                    tool_id = content.id
-                    
-                    # Execute the tool
-                    result = self.execute_tool(tool_name, tool_args)
-                    results.append(f"Executed {tool_name}: {result}")
-                    
-                    # Prepare tool result for Claude
-                    tool_results.append({
-                        "tool_use_id": tool_id,
-                        "content": result
-                    })
-                elif content.type == "text":
-                    results.append(content.text)
-            
-            # If there were tool calls, get Claude's final response
-            if tool_results:
-                messages.extend([
-                    {"role": "assistant", "content": response.content},
-                    {
-                        "role": "user", 
-                        "content": [
-                            {
-                                "type": "tool_result",
-                                "tool_use_id": tool_result["tool_use_id"],
-                                "content": tool_result["content"]
-                            } for tool_result in tool_results
-                        ]
-                    }
-                ])
-                
-                final_response = self.client.messages.create(
-                    model="claude-sonnet-4-20250514",
-                    max_tokens=1000,
-                    tools=self.tools,
-                    messages=messages
+            if tool_name == "add_track":
+                return self.add_track(arguments["track_name"])
+            elif tool_name == "delete_track":
+                return self.delete_track(arguments["track_identifier"])
+            elif tool_name == "add_fx_to_track":
+                return self.add_fx_to_track(arguments["track_identifier"], arguments["fx_name"])
+            elif tool_name == "remove_fx_from_track":
+                return self.remove_fx_from_track(arguments["track_identifier"], arguments["fx_index"])
+            elif tool_name == "list_tracks":
+                return self.list_tracks()
+            elif tool_name == "list_fx_on_track":
+                return self.list_fx_on_track(arguments["track_identifier"])
+            elif tool_name == "inspect_fx_parameters":
+                return self.inspect_fx_parameters(arguments["track_identifier"], arguments["fx_index"])
+            elif tool_name == "set_fx_parameter":
+                return self.set_fx_parameter(
+                    arguments["track_identifier"], 
+                    arguments["fx_index"], 
+                    arguments["param_index"], 
+                    arguments["value"],
+                    arguments.get("use_formatted", True)
                 )
+            elif tool_name == "modify_fx_parameter":
+                return self.modify_fx_parameter(
+                    arguments["track_identifier"], 
+                    arguments["fx_index"], 
+                    arguments["param_index"], 
+                    arguments["operation"],
+                    arguments["value"]
+                )
+            elif tool_name == "add_midi_item":
+                return self.add_midi_item(
+                    arguments["track_identifier"],
+                    arguments.get("start_time", 0),
+                    arguments.get("end_time", 4)
+                )
+            elif tool_name == "add_note_to_track":
+                return self.add_note_to_track(
+                    arguments["track_identifier"],
+                    arguments["start_time"],
+                    arguments["end_time"],
+                    arguments["pitch"],
+                    arguments.get("velocity", 100),
+                    arguments.get("channel", 0)
+                )
+            elif tool_name == "list_notes_on_track":
+                return self.list_notes_on_track(
+                    arguments["track_identifier"],
+                    arguments.get("item_index", 0)
+                )
+            elif tool_name == "transpose_notes":
+                return self.transpose_notes(
+                    arguments["track_identifier"],
+                    arguments["semitones"],
+                    arguments.get("item_index", -1)
+                )
+            elif tool_name == "add_multiple_notes":
+                # Debug logging to see what arguments we received
+                logger.info(f"add_multiple_notes called with arguments: {arguments}")
                 
-                for content in final_response.content:
-                    if content.type == "text":
-                        results.append(content.text)
-            
-            return "\n".join(results)
-            
+                # Check if required parameters exist
+                if "track_identifier" not in arguments:
+                    return "Error: Missing required parameter 'track_identifier'"
+                if "note_data" not in arguments:
+                    return f"Error: Missing required parameter 'note_data'. Received arguments: {list(arguments.keys())}"
+                
+                return self.add_multiple_notes(
+                    arguments["track_identifier"],
+                    arguments["note_data"]
+                )
+            else:
+                return f"Unknown tool: {tool_name}"
+                
+        except KeyError as e:
+            logger.error(f"KeyError in execute_tool: {e}")
+            logger.error(f"Tool: {tool_name}, Arguments: {arguments}")
+            return f"Error: Missing required parameter {e} for tool {tool_name}"
         except Exception as e:
-            logger.error(f"Error processing query: {e}")
-            return f"Error processing query: {str(e)}"
-
-    def process_query_with_chaining(self, user_query: str, max_rounds: int = 5) -> str:
+            logger.error(f"Error executing tool {tool_name}: {e}")
+            return f"Error executing tool {tool_name}: {str(e)}"
+    
+    def process_query_with_chaining(self, user_query: str, max_rounds: int = 10) -> str:
         """Process user query with multi-round tool calling support"""
         if not self.client:
             return "Error: Claude API not configured"
@@ -851,7 +1258,8 @@ def main():
     print("- Set parameter: 'Set parameter 2 of FX 0 on Bass track to 0.75'")
     print("- Multiply parameter: 'Multiply parameter 6 of FX 0 on Bass track by 1.5'")
     print("- Complex chaining: 'Create 3 tracks named Drums, Bass, Guitar and add ReaSynth to each'")
-    print("\nThe system automatically detects when chaining is needed!")
+    print("- MIDI operations: 'Add multiple notes to track 1', 'Transpose track 1 up an octave'")
+    print("\nAll queries use intelligent chaining - Claude will stop naturally when complete!")
     print("Type 'quit' to exit\n")
     
     while True:
@@ -861,19 +1269,9 @@ def main():
                 break
             
             if user_input:
-                # Auto-detect if chaining might be needed
-                if any(keyword in user_input.lower() for keyword in [
-                    'all parameters', 'then', 'and then', 'after that', 'next', 
-                    'show me all', 'list all', 'inspect all', 'parameters of',
-                    'create', 'add', 'delete', 'remove', 'set parameter',
-                    'change', 'modify', 'adjust', 'decay', 'attack', 'release',
-                    'volume', 'sustain', 'cutoff', 'resonance', 'to be', 'make it'
-                ]):
-                    result = controller.process_query_with_chaining(user_input)
-                    print(f"Result: {result}\n")
-                else:
-                    result = controller.process_query(user_input)
-                    print(f"Result: {result}\n")
+                # Always use chaining - Claude will naturally stop when no more tools are needed
+                result = controller.process_query_with_chaining(user_input)
+                print(f"Result: {result}\n")
                 
         except KeyboardInterrupt:
             print("\nExiting...")
