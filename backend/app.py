@@ -64,6 +64,18 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Import REAPER controller
+try:
+    from reapy_actions import ReaperController
+    reaper_controller = ReaperController()
+    logger.info("REAPER Controller initialized successfully")
+except ImportError:
+    print("Warning: Could not import ReaperController from reapy_actions.py")
+    reaper_controller = None
+except Exception as e:
+    logger.error(f"Failed to initialize REAPER Controller: {e}")
+    reaper_controller = None
+
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -71,6 +83,51 @@ CORS(app)  # Enable CORS for all routes
 # Global conversation history (in production, you'd want to store this per user/session)
 conversation_history = []
 MAX_HISTORY = 10  # Keep last 10 messages for context
+
+def detect_reaper_action(message: str) -> bool:
+    """
+    Detect if a user message requires REAPER actions
+    Returns True if the message should be routed to the REAPER controller
+    """
+    message_lower = message.lower()
+    
+    # REAPER-specific keywords and phrases
+    reaper_keywords = [
+        # Track operations
+        'add track', 'create track', 'new track', 'delete track', 'remove track',
+        'list tracks', 'show tracks', 'track named', 'track called',
+        
+        # FX operations  
+        'add fx', 'add effect', 'add plugin', 'remove fx', 'remove effect',
+        'fx parameter', 'effect parameter', 'plugin parameter',
+        'set parameter', 'adjust parameter', 'modify parameter',
+        'compressor', 'reverb', 'delay', 'eq', 'synthesizer', 'synth',
+        'reasynth', 'reaeq', 'reacomp', 'rea', 'vst',
+        
+        # MIDI operations
+        'add note', 'add midi', 'midi note', 'transpose', 'pitch',
+        'note data', 'midi data', 'chord', 'melody line',
+        
+        # REAPER-specific terms
+        'reaper', 'daw', 'project', 'session', 'timeline',
+        'automation', 'routing', 'send', 'bus'
+    ]
+    
+    # Check for any REAPER keywords
+    for keyword in reaper_keywords:
+        if keyword in message_lower:
+            return True
+    
+    # Check for action-oriented phrases with music terms
+    action_phrases = ['create', 'add', 'make', 'set up', 'configure', 'adjust', 'modify', 'change']
+    music_terms = ['track', 'channel', 'fx', 'effect', 'plugin', 'parameter', 'midi', 'note']
+    
+    for action in action_phrases:
+        for term in music_terms:
+            if action in message_lower and term in message_lower:
+                return True
+    
+    return False
 
 @app.route('/transcribe', methods=['POST'])
 def transcribe_audio():
@@ -169,8 +226,52 @@ def chat_message():
         message = data['message']
         logger.info(f"Received chat message: {message}")
         
+        # Check if this is a REAPER action request
+        if detect_reaper_action(message) and reaper_controller:
+            logger.info("Detected REAPER action request - routing to Claude controller")
+            try:
+                # Use Claude-powered REAPER controller for DAW operations
+                reaper_response = reaper_controller.process_query_with_chaining(message)
+                
+                # Generate TTS for the REAPER response
+                try:
+                    if OpenAI:
+                        client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+                        tts_response = client.audio.speech.create(
+                            model="tts-1",
+                            voice="alloy",
+                            input=reaper_response
+                        )
+                        audio_base64 = base64.b64encode(tts_response.content).decode('utf-8')
+                        logger.info(f"Generated TTS for REAPER response")
+                    else:
+                        audio_base64 = None
+                except Exception as e:
+                    logger.error(f"TTS generation failed for REAPER response: {e}")
+                    audio_base64 = None
+                
+                # Update conversation history with REAPER interaction
+                conversation_history.append({"role": "user", "content": message})
+                conversation_history.append({"role": "assistant", "content": reaper_response})
+                
+                # Keep only the last MAX_HISTORY messages
+                if len(conversation_history) > MAX_HISTORY * 2:
+                    conversation_history = conversation_history[-MAX_HISTORY * 2:]
+                
+                return jsonify({
+                    'success': True,
+                    'response': reaper_response,
+                    'audio': audio_base64,
+                    'reaper_action': True,
+                    'music_generation': None
+                })
+                
+            except Exception as e:
+                logger.error(f"REAPER controller error: {e}")
+                response = f"I encountered an error while performing the REAPER action: {str(e)}"
+        
         # Use OpenAI GPT for intelligent responses
-        if not OpenAI:
+        elif not OpenAI:
             response = "I'm sorry, but I'm not able to process your request right now. Please try again later."
         else:
             try:
@@ -317,6 +418,39 @@ def clear_conversation():
         
     except Exception as e:
         logger.error(f"Error clearing conversation: {e}")
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/reaper-action', methods=['POST'])
+def reaper_action():
+    """Handle REAPER-specific actions using Claude controller"""
+    try:
+        data = request.get_json()
+        if not data or 'action' not in data:
+            return jsonify({'success': False, 'error': 'No action provided'})
+        
+        action = data['action']
+        logger.info(f"Received REAPER action: {action}")
+        
+        if not reaper_controller:
+            return jsonify({'success': False, 'error': 'REAPER controller not available'})
+        
+        # Use Claude-powered REAPER controller
+        try:
+            result = reaper_controller.process_query_with_chaining(action)
+            logger.info(f"REAPER action completed: {result[:100]}...")
+            
+            return jsonify({
+                'success': True,
+                'result': result,
+                'action': action
+            })
+            
+        except Exception as e:
+            logger.error(f"REAPER action error: {e}")
+            return jsonify({'success': False, 'error': str(e)})
+        
+    except Exception as e:
+        logger.error(f"REAPER action endpoint error: {e}")
         return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/generate-music', methods=['POST'])
@@ -1021,9 +1155,14 @@ if __name__ == "__main__":
     print("Available services:")
     print("- OpenAI Whisper transcription: http://localhost:5000/transcribe")
     print("- Text-to-speech: http://localhost:5000/tts")
-    print("- Chat messages: http://localhost:5000/chat")
+    print("- Chat messages (hybrid OpenAI + Claude): http://localhost:5000/chat")
     print("- Clear conversation: http://localhost:5000/clear-conversation")
-    print("- Generate music: http://localhost:5000/generate-music")
+    print("- Generate music (Beatoven.ai): http://localhost:5000/generate-music")
+    print("- REAPER actions (Claude-powered): http://localhost:5000/reaper-action")
+    print("\nAI Models:")
+    print("- OpenAI GPT-3.5-turbo: General chat, music generation detection, TTS")
+    print("- Claude Sonnet 4: REAPER DAW operations with advanced tool calling")
+    print("- Auto-routing: REAPER requests -> Claude, General chat -> OpenAI")
     
     # Start Flask server
     app.run(host='0.0.0.0', port=5000, debug=False)
