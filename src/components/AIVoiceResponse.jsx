@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
+import ReactMarkdown from 'react-markdown'
 
 const AIVoiceResponse = React.memo(({ text, audioBase64, messageId, onPlayStart, onPlayEnd }) => {
   const [isPlaying, setIsPlaying] = useState(false)
@@ -83,7 +84,23 @@ const AIVoiceResponse = React.memo(({ text, audioBase64, messageId, onPlayStart,
 
   return (
     <div className="ai-voice-response" data-message-id={messageId}>
-      <div className="ai-text">{text}</div>
+      <div className="ai-text">
+        <ReactMarkdown 
+          className="markdown-content"
+          components={{
+            p: ({children}) => <div className="mb-2">{children}</div>,
+            strong: ({children}) => <strong className="font-bold text-white">{children}</strong>,
+            em: ({children}) => <em className="italic text-white">{children}</em>,
+            ul: ({children}) => <ul className="list-disc list-inside mb-2 space-y-1">{children}</ul>,
+            li: ({children}) => <li className="text-white">{children}</li>,
+            h1: ({children}) => <h1 className="text-xl font-bold text-white mb-2">{children}</h1>,
+            h2: ({children}) => <h2 className="text-lg font-bold text-white mb-2">{children}</h2>,
+            h3: ({children}) => <h3 className="text-md font-bold text-white mb-1">{children}</h3>
+          }}
+        >
+          {text}
+        </ReactMarkdown>
+      </div>
       
       {audioBase64 && (
         <div className="ai-voice-controls">

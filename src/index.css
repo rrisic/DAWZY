@@ -436,4 +436,52 @@
 @keyframes fadeInOut {
   0%, 100% { opacity: 0.6; }
   50% { opacity: 1; }
+}
+
+/* Markdown content styling */
+.markdown-content {
+  color: white;
+  line-height: 1.6;
+}
+
+.markdown-content strong {
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.markdown-content em {
+  font-style: italic;
+  color: #e2e8f0;
+}
+
+.markdown-content ul {
+  margin: 8px 0;
+  padding-left: 0;
+}
+
+.markdown-content li {
+  margin: 4px 0;
+  list-style-type: disc;
+  list-style-position: inside;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  font-weight: bold;
+  color: #f8fafc;
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+.markdown-content p {
+  margin: 4px 0;
+}
+
+.markdown-content code {
+  background: rgba(15, 23, 42, 0.6);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
 } 
