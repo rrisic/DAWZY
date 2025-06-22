@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 
-const AIVoiceResponse = ({ text, audioBase64, messageId, onPlayStart, onPlayEnd }) => {
+const AIVoiceResponse = React.memo(({ text, audioBase64, messageId, onPlayStart, onPlayEnd }) => {
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoaded, setIsLoaded] = useState(false)
   const [error, setError] = useState(null)
@@ -23,34 +23,34 @@ const AIVoiceResponse = ({ text, audioBase64, messageId, onPlayStart, onPlayEnd 
     }
   }, [audioBase64])
 
+  const handleCanPlay = useCallback(() => {
+    setIsLoaded(true)
+    setError(null)
+  }, [])
+
+  const handlePlay = useCallback(() => {
+    setIsPlaying(true)
+    onPlayStart?.()
+  }, [onPlayStart])
+
+  const handlePause = useCallback(() => {
+    setIsPlaying(false)
+  }, [])
+
+  const handleEnded = useCallback(() => {
+    setIsPlaying(false)
+    onPlayEnd?.()
+  }, [onPlayEnd])
+
+  const handleError = useCallback((e) => {
+    console.error('Audio error:', e)
+    setError('Error playing audio')
+    setIsPlaying(false)
+  }, [])
+
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
-
-    const handleCanPlay = () => {
-      setIsLoaded(true)
-      setError(null)
-    }
-
-    const handlePlay = () => {
-      setIsPlaying(true)
-      onPlayStart?.()
-    }
-
-    const handlePause = () => {
-      setIsPlaying(false)
-    }
-
-    const handleEnded = () => {
-      setIsPlaying(false)
-      onPlayEnd?.()
-    }
-
-    const handleError = (e) => {
-      console.error('Audio error:', e)
-      setError('Error playing audio')
-      setIsPlaying(false)
-    }
 
     // Add event listeners
     audio.addEventListener('canplay', handleCanPlay)
@@ -66,20 +66,20 @@ const AIVoiceResponse = ({ text, audioBase64, messageId, onPlayStart, onPlayEnd 
       audio.removeEventListener('ended', handleEnded)
       audio.removeEventListener('error', handleError)
     }
-  }, [onPlayStart, onPlayEnd])
+  }, [handleCanPlay, handlePlay, handlePause, handleEnded, handleError])
 
-  const handlePlayClick = () => {
+  const handlePlayClick = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.play()
     }
-  }
+  }, [])
 
-  const handleStopClick = () => {
+  const handleStopClick = useCallback(() => {
     if (audioRef.current) {
       audioRef.current.pause()
       audioRef.current.currentTime = 0
     }
-  }
+  }, [])
 
   return (
     <div className="ai-voice-response" data-message-id={messageId}>
@@ -116,6 +116,8 @@ const AIVoiceResponse = ({ text, audioBase64, messageId, onPlayStart, onPlayEnd 
       />
     </div>
   )
-}
+})
+
+AIVoiceResponse.displayName = 'AIVoiceResponse'
 
 export default AIVoiceResponse 

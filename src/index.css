@@ -261,9 +261,6 @@
   .custom-audio-controls {
     width: 100%;
     height: 32px;
-    border-radius: 8px;
-    background: linear-gradient(135deg, rgba(30, 41, 59, 0.6) 0%, rgba(51, 65, 85, 0.4) 100%);
-    border: 1px solid rgba(139, 92, 246, 0.2);
   }
 
   .custom-audio-controls::-webkit-media-controls-panel {
@@ -271,12 +268,10 @@
   }
 
   .custom-audio-controls::-webkit-media-controls-play-button {
-    background: linear-gradient(135deg, #8b5cf6, #a855f7);
     border-radius: 50%;
   }
 
   .custom-audio-controls::-webkit-media-controls-timeline {
-    background: rgba(255, 255, 255, 0.2);
     border-radius: 2px;
   }
 

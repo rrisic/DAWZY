@@ -10,10 +10,7 @@ const ChatWindow = () => {
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isVoiceMode, setIsVoiceMode] = useState(false)
   const [autoPlayEnabled, setAutoPlayEnabled] = useState(true)
-  const [liveTranscription, setLiveTranscription] = useState('')
-  const [isRecording, setIsRecording] = useState(false)
   const messagesEndRef = useRef(null)
   const textareaRef = useRef(null)
   const inputContainerRef = useRef(null)
@@ -62,11 +59,11 @@ const ChatWindow = () => {
 
   useEffect(() => {
     autoResizeTextarea()
-  }, [input, liveTranscription])
+  }, [input])
 
   // Auto-play the latest AI audio response
   useEffect(() => {
-    if (autoPlayEnabled && isVoiceMode) {
+    if (autoPlayEnabled) {
       const lastMessage = messages[messages.length - 1]
       if (lastMessage && lastMessage.sender === 'ai' && lastMessage.audio && lastAudioRef.current !== lastMessage.id) {
         lastAudioRef.current = lastMessage.id
@@ -79,14 +76,13 @@ const ChatWindow = () => {
         }, 500)
       }
     }
-  }, [messages, autoPlayEnabled, isVoiceMode])
+  }, [messages, autoPlayEnabled])
 
   const sendMessage = async (messageText = null) => {
-    const textToSend = messageText || input.trim() || liveTranscription.trim()
+    const textToSend = messageText || input.trim()
     if (!textToSend || isLoading) return
 
     setInput('')
-    setLiveTranscription('')
     setIsLoading(true)
 
     // Add user message
@@ -136,40 +132,15 @@ const ChatWindow = () => {
       }])
     } finally {
       setIsLoading(false)
-      // Refocus textarea after sending message (only in text mode)
-      if (!isVoiceMode) {
-        setTimeout(() => {
-          textareaRef.current?.focus()
-        }, 100)
-      }
+      // Refocus textarea after sending message
+      setTimeout(() => {
+        textareaRef.current?.focus()
+      }, 100)
     }
   }
 
   const handleVoiceInput = (text) => {
     sendMessage(text)
-  }
-
-  const handleTranscriptionUpdate = (transcription) => {
-    setLiveTranscription(transcription)
-  }
-
-  const handleRecordingStateChange = (recording) => {
-    setIsRecording(recording)
-  }
-
-  const handleModeChange = (newVoiceMode) => {
-    setIsVoiceMode(newVoiceMode)
-    setLiveTranscription('')
-    setIsRecording(false)
-    if (newVoiceMode) {
-      // Switch to voice mode - textarea shows live transcription
-      setInput('')
-    } else {
-      // Switch to text mode - enable textarea for typing
-      setTimeout(() => {
-        textareaRef.current?.focus()
-      }, 100)
-    }
   }
 
   const handleAudioRecorded = (audioFile) => {
@@ -195,11 +166,7 @@ const ChatWindow = () => {
     }, 1000)
   }
 
-  const handleTextareaChange = (e) => {
-    if (isVoiceMode && isRecording) {
-      // In voice mode while recording, don't allow manual editing
-      return
-    }
+  const handleInputChange = (e) => {
     setInput(e.target.value)
   }
 
@@ -229,21 +196,6 @@ const ChatWindow = () => {
     }
     
     return message.text
-  }
-
-  // Determine what to show in textarea
-  const getTextareaValue = () => {
-    if (isVoiceMode && isRecording) {
-      return liveTranscription
-    }
-    return input
-  }
-
-  const getTextareaPlaceholder = () => {
-    if (isVoiceMode) {
-      return isRecording ? "Speaking... (Press Enter to send)" : "Click microphone to start speaking"
-    }
-    return "Type your message here... (Press Enter to send)"
   }
 
   return (
@@ -311,11 +263,11 @@ const ChatWindow = () => {
           <div className="relative">
             <textarea
               ref={textareaRef}
-              className={`custom-textarea pr-20 pb-12 ${isVoiceMode && isRecording ? 'bg-green-900/20 border-green-500/50' : ''}`}
-              value={getTextareaValue()}
-              onChange={handleTextareaChange}
+              className="custom-textarea pr-20 pb-12"
+              value={input}
+              onChange={handleInputChange}
               onKeyPress={handleKeyPress}
-              placeholder={getTextareaPlaceholder()}
+              placeholder="Type your message here... (Press Enter to send)"
               disabled={isLoading}
               rows={1}
             />
@@ -323,33 +275,27 @@ const ChatWindow = () => {
               <VoiceButton 
                 onVoiceInput={handleVoiceInput}
                 disabled={isLoading}
-                isVoiceMode={isVoiceMode}
-                onModeChange={handleModeChange}
-                onTranscriptionUpdate={handleTranscriptionUpdate}
-                onRecordingStateChange={handleRecordingStateChange}
               />
               <RecordButton 
                 onAudioRecorded={handleAudioRecorded}
-                disabled={isLoading || isVoiceMode}
+                disabled={isLoading}
               />
             </div>
           </div>
           
-          {/* Voice Mode Controls */}
-          {isVoiceMode && (
-            <div className="mt-2 flex items-center justify-between text-sm text-white/70">
-              <div className="flex items-center gap-2">
-                <span>🎤 Real-time Transcription Mode</span>
-                <button
-                  onClick={() => setAutoPlayEnabled(!autoPlayEnabled)}
-                  className={`px-2 py-1 rounded text-xs ${autoPlayEnabled ? 'bg-green-600' : 'bg-gray-600'}`}
-                >
-                  {autoPlayEnabled ? 'Auto-play ON' : 'Auto-play OFF'}
-                </button>
-              </div>
-              <span className="text-xs">Speak naturally, then press Enter to send</span>
-            </div>
-          )}
+          {/* Auto-play Toggle */}
+          <div className="mt-2 flex items-center justify-end">
+            <button
+              onClick={() => setAutoPlayEnabled(!autoPlayEnabled)}
+              title={autoPlayEnabled ? 'Turn off AI voice responses' : 'Turn on AI voice responses'}
+              className={`
+                voice-play-button ${autoPlayEnabled ? 'playing' : ''}
+                cursor-pointer
+              `}
+            >
+              {autoPlayEnabled ? '🔊' : '🔇'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
