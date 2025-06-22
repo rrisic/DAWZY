@@ -384,6 +384,23 @@
   animation: pulse 1.5s infinite;
 }
 
+/* Voice mode active state */
+.voice-play-button.voice-mode-active {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+.voice-play-button.voice-mode-active:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.5);
+}
+
+/* Processing state */
+.voice-play-button.processing {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  animation: pulse 1s infinite;
+}
+
 /* Record button styling with red theme */
 .voice-play-button.record-button {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -407,7 +424,7 @@
 }
 
 .loading-indicator {
-  color: #fbbf24;
+  color: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .error-indicator {

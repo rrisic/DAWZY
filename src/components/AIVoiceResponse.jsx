@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 
-const AIVoiceResponse = ({ text, audioBase64, onPlayStart, onPlayEnd }) => {
+const AIVoiceResponse = ({ text, audioBase64, messageId, onPlayStart, onPlayEnd }) => {
   const [isPlaying, setIsPlaying] = useState(false)
   const [isLoaded, setIsLoaded] = useState(false)
   const [error, setError] = useState(null)
@@ -82,7 +82,7 @@ const AIVoiceResponse = ({ text, audioBase64, onPlayStart, onPlayEnd }) => {
   }
 
   return (
-    <div className="ai-voice-response">
+    <div className="ai-voice-response" data-message-id={messageId}>
       <div className="ai-text">{text}</div>
       
       {audioBase64 && (
